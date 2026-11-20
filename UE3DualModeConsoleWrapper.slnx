@@ -1,4 +1,3 @@
 <Solution>
   <Project Path="src/UE3DualModeConsoleWrapper/UE3DualModeConsoleWrapper.csproj" />
-  <Project Path="src/UE3DualModeConsoleWrapper/VNEditorConsoleWrapper.csproj" />
 </Solution>
