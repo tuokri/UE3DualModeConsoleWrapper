@@ -47,7 +47,8 @@ The review identified these existing strengths:
   are appropriate for the required native Windows calls.
 - The wrapper currently forwards UTF-16LE text, recognizes split color-control
   records, waits for both pipe EOF and process exit, and propagates the target's
-  exit code.
+  exit code. The UE3 color payload is a binary RGBI console-attribute string,
+  not a hexadecimal palette index.
 - `dotnet build -warnaserror` and `dotnet format --verify-no-changes` pass on the
   current branch.
 
@@ -340,7 +341,10 @@ Add a Windows Job Object:
 5. Abort startup and terminate the suspended child if job assignment fails.
 6. Track and dispose the job, process, thread, pipe, event, and cancellation
    handles deterministically.
-7. Treat `TerminateJobObject` as the authoritative forced-shutdown operation;
+7. Create the PID event `dualmode_die_event<PID>` and the bare
+   `ComWrapperShutdown` event as initially unsignaled, manual-reset events before
+   `ResumeThread`. Do not require either event to signal for normal completion.
+8. Treat `TerminateJobObject` as the authoritative forced-shutdown operation;
    retain `Process.Kill(entireProcessTree: true)` only as a diagnostic/fallback
    path for a process that cannot be assigned.
 
@@ -374,13 +378,15 @@ First Ctrl+C:
    immediately.
 2. Write a single clear message:
    `Exiting... Press Ctrl+C again to force exit.`
-3. Start graceful shutdown and continue draining the named pipe so the target is
+3. Signal the initially unsignaled `ComWrapperShutdown` event once so cooperative
+   UE3 server targets begin their normal game-ending path.
+4. Start graceful shutdown and continue draining the named pipe so the target is
    not blocked by a full output buffer.
-4. Attempt `Process.CloseMainWindow()` once for an interactive target when a main
+5. Attempt `Process.CloseMainWindow()` once for an interactive target when a main
    window exists; do not synthesize keystrokes or automate dialogs.
-5. Cancel wrapper-owned waits only at points where doing so is safe for output
+6. Cancel wrapper-owned waits only at points where doing so is safe for output
    draining and lifecycle cleanup.
-6. Keep waiting for normal target completion. The user can issue a second Ctrl+C
+7. Keep waiting for normal target completion. The user can issue a second Ctrl+C
    if graceful shutdown stalls.
 
 Second or later Ctrl+C:
@@ -402,7 +408,8 @@ async control flow.
 Tests:
 
 1. First signal switches to graceful state and leaves the child alive.
-2. Graceful state requests a close and continues output draining.
+2. Graceful state signals `ComWrapperShutdown`, requests a close where
+   applicable, and continues output draining.
 3. Second signal terminates the job, main child, and synthetic descendants.
 4. Multiple signals are idempotent.
 5. A normal exit during graceful shutdown produces the expected cancellation
@@ -425,14 +432,19 @@ Tests:
    older array-only overload where practical.
 5. Create the UTF-16 decoder explicitly as UTF-16LE with strict fallback so a
    truncated final code unit is reported instead of silently replaced.
-6. Preserve marker behavior across every possible read boundary.
-7. Catch expected operational exceptions and cleanup `AggregateException` in the
+6. Parse color controls as up to eight binary component digits that map to
+   Windows foreground/background RGBI attributes. `1111` maps to foreground
+   white (`0x000f`); it is not an out-of-range hexadecimal value. Parse `Reset`
+   case-insensitively and preserve the original console attributes on reset.
+7. Preserve marker, reset, and binary payload behavior across every possible
+   read boundary. Consume valid color records rather than forwarding them.
+8. Catch expected operational exceptions and cleanup `AggregateException` in the
    top-level boundary.
-8. Report a concise primary message to stderr and preserve the original and
+9. Report a concise primary message to stderr and preserve the original and
    cleanup exceptions in one aggregate diagnostic.
-9. Do not catch fatal runtime failures such as stack overflow or out-of-memory
+10. Do not catch fatal runtime failures such as stack overflow or out-of-memory
    conditions.
-10. Flush output after each complete read batch.
+11. Flush output after each complete read batch.
 
 **Acceptance criteria**
 
@@ -459,6 +471,7 @@ This is a required development/reference task, not a CI dependency.
    - pipe byte/message mode and buffers;
    - UTF-16 handling;
    - event creation and signaling;
+   - close-event reset mode and target close ordering;
    - output loop and close detection;
    - color-control marker mapping;
    - target exit/exit-code handling;
@@ -523,10 +536,13 @@ Command-line quoting tests:
 Decoder tests:
 
 - plain UTF-16LE;
+- ordinary records retain their `\r\n` and optional category prefix;
+- truncated UTF-16 code units;
 - every split point in the color marker;
 - every split point in `Reset`;
-- all palette indices 0–15;
-- out-of-range records such as `1111`;
+- every binary foreground/background RGBI payload used by UE3, including
+  `0000`, `0001`, `0010`, `0100`, `1000`, `1111`, and `11111111`;
+- case-insensitive `Reset`;
 - malformed and incomplete records;
 - redirected-output behavior;
 - reset after normal EOF;
@@ -565,13 +581,15 @@ CI run.
 Build a `TestChild` console program that:
 
 1. uses its own PID to connect to `\\.\pipe\<pid>cout`;
-2. opens `dualmode_die_event<pid>`;
-3. writes its exact argument array to a test-controlled file;
-4. emits UTF-16LE text and color records in deliberately split writes;
-5. can close the pipe before remaining alive;
-6. can exit with a selected code;
-7. can block indefinitely;
-8. can start a tracked descendant for process-tree tests.
+2. opens `dualmode_die_event<pid>` and signals it before closing the pipe;
+3. opens `ComWrapperShutdown` for cooperative server-shutdown tests;
+4. writes its exact argument array to a test-controlled file;
+5. emits UTF-16LE text and binary color records in deliberately split byte
+   writes, including `1111` and `11111111`;
+6. can close the pipe before remaining alive;
+7. can exit with a selected code;
+8. can block indefinitely;
+9. can start a tracked descendant for process-tree tests.
 
 Required scenarios:
 
@@ -580,11 +598,13 @@ Required scenarios:
 2. Exit `0` without a pipe connection: wrapper reports a protocol error.
 3. Nonzero exit without a pipe connection: child code is propagated.
 4. First/second Ctrl+C semantics.
-5. Cancellation while waiting for a connection.
-6. Cancellation while forwarding output.
-7. Descendant termination through the Job Object.
-8. Abrupt termination of the wrapper followed by child/descendant termination.
-9. Color reset after an injected output failure.
+5. Cooperative server shutdown through `ComWrapperShutdown`, with continued
+   output draining.
+6. Cancellation while waiting for a connection.
+7. Cancellation while forwarding output.
+8. Descendant termination through the Job Object.
+9. Abrupt termination of the wrapper followed by child/descendant termination.
+10. Color reset after an injected output failure.
 
 E2E policy:
 
