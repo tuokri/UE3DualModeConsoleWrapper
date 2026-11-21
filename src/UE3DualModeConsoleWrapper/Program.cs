@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+using System.CommandLine;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
@@ -20,56 +21,98 @@ using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
-using System.Text.Json;
 using Microsoft.Win32.SafeHandles;
 
-if (args is not
-    [
-        "--editor-path",
-        var editorPath,
-        "--working-directory",
-        var workingDirectory,
-        "--arguments-json",
-        var argumentsJson
-    ])
+var executableOption = new Option<string>("--executable")
 {
-    Console.Error.WriteLine(
-        "Usage: UE3DualModeConsoleWrapper --editor-path <path> " +
-        "--working-directory <path> --arguments-json <json-array>");
-    return 2;
-}
+    Description = "Path to the UE3 dual-mode target executable.",
+    HelpName = "path",
+    Required = true
+};
+var workingDirectoryOption = new Option<string?>("--working-directory")
+{
+    Description = "Working directory for the target process. Defaults to the executable directory.",
+    HelpName = "path"
+};
+var noColorOption = new Option<bool>("--no-color")
+{
+    Description = "Disable console color control records."
+};
+var targetArgumentsArgument = new Argument<string[]>("target-arguments")
+{
+    Arity = ArgumentArity.ZeroOrMore,
+    Description = "Arguments forwarded to the target after '--'."
+};
 
-if (!OperatingSystem.IsWindows())
+var rootCommand = new RootCommand(
+    "Runs a UE3 dual-mode console target and forwards its output.")
 {
-    Console.Error.WriteLine("The UE3 dual-mode console wrapper requires Windows.");
-    return 2;
-}
-
-try
+    TreatUnmatchedTokensAsErrors = true
+};
+rootCommand.Options.Add(executableOption);
+rootCommand.Options.Add(workingDirectoryOption);
+rootCommand.Options.Add(noColorOption);
+rootCommand.Arguments.Add(targetArgumentsArgument);
+rootCommand.Validators.Add(result =>
 {
-    var editorArguments = JsonSerializer.Deserialize<string[]>(argumentsJson)
-                          ?? throw new JsonException("The target arguments must be a JSON string array.");
-    if (editorArguments.Any(static argument => argument is null))
+    var requestsMetadata = args.Any(static argument =>
+        argument is "--help" or "-h" or "-?" or "--version");
+    if (!requestsMetadata && !args.Contains("--", StringComparer.Ordinal))
     {
-        throw new JsonException("Target arguments cannot contain null values.");
+        result.AddError("Specify '--' before target arguments.");
+    }
+});
+rootCommand.SetAction(async (parseResult, cancellationToken) =>
+{
+    if (!OperatingSystem.IsWindows())
+    {
+        Console.Error.WriteLine("The UE3 dual-mode console wrapper requires Windows.");
+        return 1;
     }
 
-    return await UE3.DualModeConsoleWrapper.DualModeLauncher
-        .RunAsync(editorPath, workingDirectory, editorArguments)
-        .ConfigureAwait(false);
-}
-catch (Exception exception) when (
-    exception is ArgumentException or
-        IOException or
-        InvalidOperationException or
-        JsonException or
-        PlatformNotSupportedException or
-        UnauthorizedAccessException or
-        Win32Exception)
+    try
+    {
+        var executablePath = parseResult.GetRequiredValue(executableOption);
+        var workingDirectory = parseResult.GetValue(workingDirectoryOption) ??
+                               Path.GetDirectoryName(Path.GetFullPath(executablePath)) ??
+                               Environment.CurrentDirectory;
+
+        return await UE3.DualModeConsoleWrapper.DualModeLauncher
+            .RunAsync(
+                executablePath,
+                workingDirectory,
+                parseResult.GetValue(targetArgumentsArgument) ?? [],
+                parseResult.GetValue(noColorOption) ||
+                Environment.GetEnvironmentVariable("NO_COLOR") is not null,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+    {
+        Console.Error.WriteLine("The operation was cancelled.");
+        return 130;
+    }
+    catch (Exception exception) when (
+        exception is ArgumentException or
+            IOException or
+            InvalidOperationException or
+            PlatformNotSupportedException or
+            UnauthorizedAccessException or
+            Win32Exception)
+    {
+        Console.Error.WriteLine($"UE3 dual-mode console wrapper failed: {exception.Message}");
+        return 1;
+    }
+});
+
+var parseResult = rootCommand.Parse(args);
+var exitCode = await parseResult.InvokeAsync();
+if (parseResult.Errors.Count > 0)
 {
-    Console.Error.WriteLine($"UE3 dual-mode console wrapper failed: {exception.Message}");
-    return 1;
+    return 2;
 }
+
+return exitCode;
 
 namespace UE3.DualModeConsoleWrapper
 {
@@ -101,7 +144,9 @@ namespace UE3.DualModeConsoleWrapper
         public static async Task<int> RunAsync(
             string applicationPath,
             string workingDirectory,
-            string[] arguments)
+            string[] arguments,
+            bool noColor,
+            CancellationToken cancellationToken)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(applicationPath);
             ArgumentException.ThrowIfNullOrWhiteSpace(workingDirectory);
@@ -135,9 +180,10 @@ namespace UE3.DualModeConsoleWrapper
                 // The target signals this event when it closes its output-pipe client.
                 _ = outputClosedEvent;
 
-                connectionCancellation = new CancellationTokenSource();
+                connectionCancellation =
+                    CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 pipeConnection = pipe.WaitForConnectionAsync(connectionCancellation.Token);
-                processExit = process.WaitForExitAsync();
+                processExit = process.WaitForExitAsync(cancellationToken);
 
                 var previousSuspendCount = NativeMethods.ResumeThread(nativeThread.DangerousGetHandle());
                 if (previousSuspendCount == uint.MaxValue)
@@ -171,7 +217,7 @@ namespace UE3.DualModeConsoleWrapper
                 }
 
                 await pipeConnection.ConfigureAwait(false);
-                var output = ForwardOutputAsync(pipe);
+                var output = ForwardOutputAsync(pipe, noColor, cancellationToken);
                 await Task.WhenAll(output, processExit).ConfigureAwait(false);
                 return process.ExitCode;
             }
@@ -281,20 +327,25 @@ namespace UE3.DualModeConsoleWrapper
             return quoted.ToString();
         }
 
-        private static async Task ForwardOutputAsync(Stream pipe)
+        private static async Task ForwardOutputAsync(
+            Stream pipe,
+            bool noColor,
+            CancellationToken cancellationToken)
         {
-            var decoder = new DualModeOutputDecoder();
+            var decoder = new DualModeOutputDecoder(!noColor);
             using var reader = new StreamReader(pipe, Encoding.Unicode, detectEncodingFromByteOrderMarks: false);
             var buffer = new char[512];
             int charactersRead;
-            while ((charactersRead = await reader.ReadAsync(buffer).ConfigureAwait(false)) > 0)
+            while ((charactersRead = await reader
+                       .ReadAsync(buffer, cancellationToken)
+                       .ConfigureAwait(false)) > 0)
             {
                 decoder.Append(buffer.AsSpan(0, charactersRead));
                 Console.Out.Flush();
             }
 
             decoder.Flush();
-            if (!Console.IsOutputRedirected)
+            if (!noColor && !Console.IsOutputRedirected)
             {
                 Console.ResetColor();
             }
@@ -375,15 +426,16 @@ namespace UE3.DualModeConsoleWrapper
             await process.WaitForExitAsync().ConfigureAwait(false);
         }
 
-        private readonly record struct StartedProcess(
-            SafeProcessHandle Process,
-            SafeWaitHandle Thread,
-            uint ProcessId);
-
         private sealed class DualModeOutputDecoder
         {
             private const string ColorMarker = "\u0060~[~\u0060";
             private readonly StringBuilder _pending = new();
+            private readonly bool _useColor;
+
+            public DualModeOutputDecoder(bool useColor)
+            {
+                _useColor = useColor;
+            }
 
             public void Append(ReadOnlySpan<char> characters)
             {
@@ -416,7 +468,7 @@ namespace UE3.DualModeConsoleWrapper
                     var commandPrefix = text.Substring(commandStart, Math.Min(5, remaining));
                     if (commandPrefix.StartsWith("Reset", StringComparison.Ordinal))
                     {
-                        if (!Console.IsOutputRedirected)
+                        if (_useColor && !Console.IsOutputRedirected)
                         {
                             Console.ResetColor();
                         }
@@ -448,7 +500,8 @@ namespace UE3.DualModeConsoleWrapper
                             CultureInfo.InvariantCulture,
                             out var colorIndex))
                     {
-                        if ((uint)colorIndex < (uint)ColorPalette.Length &&
+                        if (_useColor &&
+                            (uint)colorIndex < (uint)ColorPalette.Length &&
                             !Console.IsOutputRedirected)
                         {
                             Console.ForegroundColor = ColorPalette[colorIndex];

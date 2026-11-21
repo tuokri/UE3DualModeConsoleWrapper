@@ -15,7 +15,7 @@ code changes by itself.
 
 - The project remains a **Windows wrapper for the UE3 dual-mode protocol**, not a
   replacement for general-purpose `subprocess`-style process launching.
-- Use `System.CommandLine` 2.x for CLI parsing and `--` for forwarding target
+- Use `System.CommandLine` 3.x for CLI parsing and `--` for forwarding target
   executable arguments.
 - Target the newest stable .NET and C# release available at the implementation
   time. The baseline verified for this plan is **.NET 11.0 and C# 15**; do not
@@ -205,7 +205,7 @@ AircraftMod source, examples, workflow references, package identity, or
 
 Suggested dependency baseline to recheck at implementation time:
 
-- `System.CommandLine` 2.x
+- `System.CommandLine` 3.x
 - xUnit v3 4.x
 - `Microsoft.Testing.Extensions.CodeCoverage`
 - ReportGenerator 5.x
@@ -226,7 +226,7 @@ Implement this primary contract:
 ```text
 UE3DualModeConsoleWrapper
   --executable <path>
-  --working-directory <path>
+  [--working-directory <path>]
   [--no-color]
   --
   <target arguments...>
@@ -237,14 +237,14 @@ Example:
 ```powershell
 .\UE3DualModeConsoleWrapper.exe `
   --executable 'C:\Program Files\UDK\Binaries\Win64\UDK.exe' `
-  --working-directory 'C:\Program Files\UDK' `
   -- make -useunpublished -FORCELOGFLUSH
 ```
 
 Implementation steps:
 
 1. Add `System.CommandLine`.
-2. Create a `RootCommand` with required executable and working-directory options.
+2. Create a `RootCommand` with a required executable option and an optional
+   working-directory option that defaults to the executable's directory.
 3. Add a variadic positional argument representing every token after the first
    `--`.
 4. Configure `TreatUnmatchedTokensAsErrors`.
