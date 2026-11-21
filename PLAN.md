@@ -210,7 +210,7 @@ Suggested dependency baseline to recheck at implementation time:
 - xUnit v3 4.x
 - `Microsoft.Testing.Extensions.CodeCoverage`
 - ReportGenerator 5.x
-- MinVer 7.x
+- MinVer 8.x
 - `Microsoft.SourceLink.GitHub`
 
 **Acceptance criteria**
