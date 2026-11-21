@@ -67,7 +67,7 @@ Use a name that describes the protocol rather than one product:
 
 - Suggested repository: `UE3DualModeConsoleWrapper`
 - Suggested executable: `UE3DualModeConsoleWrapper.exe`
-- Suggested namespace: `Ue3.DualModeConsoleWrapper`
+- Suggested namespace: `UE3.DualModeConsoleWrapper`
 - Suggested project layout:
 
 ```text
