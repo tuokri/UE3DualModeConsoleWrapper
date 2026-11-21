@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore UE3DualModeConsoleWrapper.slnx --locked-mode
+
+      - name: Verify formatting
+        run: dotnet format UE3DualModeConsoleWrapper.slnx --no-restore --verify-no-changes
+
+      - name: Build Release
+        run: >-
+          dotnet build UE3DualModeConsoleWrapper.slnx
+          --configuration Release
+          --no-restore
+          -warnaserror
