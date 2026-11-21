@@ -54,7 +54,7 @@ try
         throw new JsonException("Target arguments cannot contain null values.");
     }
 
-    return await Ue3.DualModeConsoleWrapper.DualModeLauncher
+    return await UE3.DualModeConsoleWrapper.DualModeLauncher
         .RunAsync(editorPath, workingDirectory, editorArguments)
         .ConfigureAwait(false);
 }
@@ -71,31 +71,31 @@ catch (Exception exception) when (
     return 1;
 }
 
-namespace Ue3.DualModeConsoleWrapper
+namespace UE3.DualModeConsoleWrapper
 {
-
     [SupportedOSPlatform("windows")]
     internal static class DualModeLauncher
     {
         private const uint CreateSuspended = 0x00000004;
+
         private static readonly ConsoleColor[] ColorPalette =
         [
             ConsoleColor.Black,
-        ConsoleColor.Black,
-        ConsoleColor.DarkBlue,
-        ConsoleColor.Blue,
-        ConsoleColor.DarkGreen,
-        ConsoleColor.Green,
-        ConsoleColor.DarkCyan,
-        ConsoleColor.Cyan,
-        ConsoleColor.DarkRed,
-        ConsoleColor.Red,
-        ConsoleColor.DarkMagenta,
-        ConsoleColor.Magenta,
-        ConsoleColor.DarkYellow,
-        ConsoleColor.Yellow,
-        ConsoleColor.Gray,
-        ConsoleColor.White
+            ConsoleColor.Black,
+            ConsoleColor.DarkBlue,
+            ConsoleColor.Blue,
+            ConsoleColor.DarkGreen,
+            ConsoleColor.Green,
+            ConsoleColor.DarkCyan,
+            ConsoleColor.Cyan,
+            ConsoleColor.DarkRed,
+            ConsoleColor.Red,
+            ConsoleColor.DarkMagenta,
+            ConsoleColor.Magenta,
+            ConsoleColor.DarkYellow,
+            ConsoleColor.Yellow,
+            ConsoleColor.Gray,
+            ConsoleColor.White
         ];
 
         public static async Task<int> RunAsync(
@@ -144,6 +144,7 @@ namespace Ue3.DualModeConsoleWrapper
                 {
                     throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to resume the target process.");
                 }
+
                 resumed = true;
                 nativeThread.Dispose();
 
@@ -297,6 +298,7 @@ namespace Ue3.DualModeConsoleWrapper
             {
                 Console.ResetColor();
             }
+
             Console.Out.Flush();
         }
 
@@ -418,9 +420,11 @@ namespace Ue3.DualModeConsoleWrapper
                         {
                             Console.ResetColor();
                         }
+
                         position = commandStart + 5;
                         continue;
                     }
+
                     if (remaining < 4 ||
                         (!final && "Reset".StartsWith(commandPrefix, StringComparison.Ordinal)))
                     {
@@ -449,6 +453,7 @@ namespace Ue3.DualModeConsoleWrapper
                         {
                             Console.ForegroundColor = ColorPalette[colorIndex];
                         }
+
                         position = commandStart + 4;
                         continue;
                     }
