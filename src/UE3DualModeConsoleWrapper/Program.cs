@@ -77,7 +77,7 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
                                Path.GetDirectoryName(Path.GetFullPath(executablePath)) ??
                                Environment.CurrentDirectory;
 
-        return await UE3.DualModeConsoleWrapper.DualModeLauncher
+        return await UE3DualModeConsoleWrapper.DualModeLauncher
             .RunAsync(
                 executablePath,
                 workingDirectory,
@@ -114,7 +114,7 @@ if (parseResult.Errors.Count > 0)
 
 return exitCode;
 
-namespace UE3.DualModeConsoleWrapper
+namespace UE3DualModeConsoleWrapper
 {
     [SupportedOSPlatform("windows")]
     internal static class DualModeLauncher

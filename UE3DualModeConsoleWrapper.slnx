@@ -1,3 +1,9 @@
 <Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/tests/">
+    <Project Path="tests/UE3DualModeConsoleWrapper.TestChild/UE3DualModeConsoleWrapper.TestChild.csproj" />
+    <Project Path="tests/UE3DualModeConsoleWrapper.UnitTests/UE3DualModeConsoleWrapper.UnitTests.csproj" />
+    <Project Path="tests/UE3DualModeConsoleWrapper.IntegrationTests/UE3DualModeConsoleWrapper.IntegrationTests.csproj" />
+  </Folder>
   <Project Path="src/UE3DualModeConsoleWrapper/UE3DualModeConsoleWrapper.csproj" />
 </Solution>
