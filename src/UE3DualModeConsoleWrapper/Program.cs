@@ -107,12 +107,7 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
 
 var parseResult = rootCommand.Parse(args);
 var exitCode = await parseResult.InvokeAsync();
-if (parseResult.Errors.Count > 0)
-{
-    return 2;
-}
-
-return exitCode;
+return parseResult.Errors.Count > 0 ? 2 : exitCode;
 
 namespace UE3DualModeConsoleWrapper
 {
