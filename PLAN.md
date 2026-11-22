@@ -320,8 +320,7 @@ Use `System.Diagnostics.Process` after native startup for:
 
 - `WaitForExitAsync(CancellationToken)`;
 - exit code access;
-- main-window close requests;
-- process-tree termination as a fallback.
+- main-window close requests during graceful shutdown.
 
 Retain direct `CreateProcessW` because `ProcessStartInfo` cannot express
 `CREATE_SUSPENDED`.
@@ -333,20 +332,35 @@ rather than mixing generated and handwritten definitions for the same APIs.
 
 Add a Windows Job Object:
 
-1. Create the job while the target is suspended.
-2. Set `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`.
-3. Assign the target process to the job before `ResumeThread`.
-4. Use job membership to guarantee abrupt wrapper termination kills all assigned
-   descendants that permit assignment.
-5. Abort startup and terminate the suspended child if job assignment fails.
-6. Track and dispose the job, process, thread, pipe, event, and cancellation
-   handles deterministically.
-7. Create the PID event `dualmode_die_event<PID>` and the bare
-   `ComWrapperShutdown` event as initially unsignaled, manual-reset events before
-   `ResumeThread`. Do not require either event to signal for normal completion.
-8. Treat `TerminateJobObject` as the authoritative forced-shutdown operation;
-   retain `Process.Kill(entireProcessTree: true)` only as a diagnostic/fallback
-   path for a process that cannot be assigned.
+1. Create and configure the Job Object before launching the target.
+2. Set `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and do not enable any breakaway
+   option.
+3. Create the target with `CREATE_SUSPENDED`.
+4. Assign the suspended target to the Job Object before `ResumeThread`. If
+   assignment fails, terminate the still-suspended child and never resume it.
+5. Create the byte-mode PID pipe and the initially unsignaled manual-reset
+   `dualmode_die_event<PID>` event.
+6. Create the initially unsignaled manual-reset `ComWrapperShutdown` event.
+   Preserve the bare name for UDK protocol compatibility; document that
+   concurrent wrappers can share it and therefore interfere with one another.
+7. Start wrapper-owned connection and process waits, then call `ResumeThread`
+   exactly once after all required protocol and cleanup objects exist.
+8. Treat pipe end-of-file and process exit as the authoritative normal-completion
+   signals. The PID close event remains a compatibility hint; do not require it
+   to signal. `ComWrapperShutdown` is wrapper-signaled only during graceful
+   cancellation.
+9. Treat `TerminateJobObject` as the authoritative forced-shutdown operation for a
+   resumed process and all descendants that remain in the job. Terminate with
+   cancellation code `130` for user-forced cancellation and runtime-error code
+   `1` for operational cleanup.
+10. Use `TerminateProcess` for a target that never resumed. Do not use
+    `Process.Kill(entireProcessTree: true)` in the normal lifecycle.
+11. Keep normal output and connection waits cancellable only at boundaries that
+    cannot abandon a live target. Cleanup waits must use uncancelled bounded or
+    native waits where appropriate.
+12. Dispose resources in reverse ownership order after the target is stopped or
+    exited: active waits, pipe, events, process wrapper, thread, and Job Object.
+    A failed setup operation must run the same deterministic cleanup path.
 
 Do not use `ProcessStartInfo.Arguments` for generated command lines. Keep the
 Windows quoting algorithm because `CreateProcessW` receives one mutable native
@@ -360,12 +374,21 @@ Quoting changes:
    every combination required by the Microsoft CRT command-line rules.
 4. Add a Windows-only test that decodes generated command lines with
    `CommandLineToArgvW` and compares each original token.
+5. Use a synthetic child that parses `argv` with the Microsoft CRT and records
+   its exact token array. Keep this alongside `CommandLineToArgvW` because the
+   two parsers provide complementary coverage.
 
 **Acceptance criteria**
 
-- No target or tracked descendant survives normal wrapper failure, graceful
-  failure, forced shutdown, or abrupt wrapper closure.
+- No target or descendant that remains assigned to the Job Object survives
+  normal wrapper failure, graceful failure, forced shutdown, or abrupt wrapper
+  closure.
 - A failed Job Object assignment never runs the target resumed.
+- Failure of job creation/configuration, suspended process creation, Job Object
+  assignment, pipe/event creation, wait setup, or resume leaves no running
+  suspended or resumed target and deterministically disposes acquired handles.
+- Every successful startup resumes the primary thread exactly once and only
+  after the Job Object, pipe, events, and waits are ready.
 
 ### 7. Implement two-stage Ctrl+C shutdown semantics
 
@@ -394,8 +417,9 @@ Second or later Ctrl+C:
 1. Keep preventing the default handler from racing wrapper cleanup.
 2. Write: `Forcing exit...`
 3. Immediately terminate the Windows Job Object and all processes assigned to it.
-4. Cancel remaining asynchronous operations, dispose native resources, and return
-   cancellation code `130`.
+4. Cancel remaining asynchronous operations, wait for process termination and
+   output cleanup without cancelling cleanup waits, dispose native resources,
+   and return cancellation code `130`.
 5. Make forced shutdown idempotent if Ctrl+C arrives several times concurrently.
 
 Apply the same state machine to `Ctrl+Break` where Windows reports it through the
@@ -550,7 +574,11 @@ Decoder tests:
 
 Lifecycle state-machine tests:
 
+- job creation failure;
+- job configuration failure;
 - start failure;
+- Job Object assignment failure;
+- pipe-event and shutdown-event creation failure;
 - resume failure;
 - exit before pipe connection;
 - pipe connection failure;
