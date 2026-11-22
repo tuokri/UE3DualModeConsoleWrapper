@@ -47,10 +47,45 @@ internal sealed class DualModeOutputDecoder
 
     private readonly StringBuilder _pending = new();
     private readonly bool _useColor;
+    private readonly IDualModeOutput _output;
 
-    public DualModeOutputDecoder(bool useColor)
+    public DualModeOutputDecoder(
+        bool useColor,
+        IDualModeOutput? output = null)
     {
         _useColor = useColor;
+        _output = output ?? ConsoleDualModeOutput.Instance;
+    }
+
+    public async Task DecodeAsync(Stream stream, CancellationToken cancellationToken)
+    {
+        using var reader = new StreamReader(
+            stream,
+            Utf16LeEncoding.Instance,
+            detectEncodingFromByteOrderMarks: false);
+        var buffer = new char[512];
+
+        try
+        {
+            int charactersRead;
+            while ((charactersRead = await reader
+                       .ReadAsync(buffer.AsMemory(), cancellationToken)
+                       .ConfigureAwait(false)) > 0)
+            {
+                Append(buffer.AsSpan(0, charactersRead));
+                _output.Flush();
+            }
+
+            Flush();
+            _output.Flush();
+        }
+        finally
+        {
+            if (_useColor && !_output.IsRedirected)
+            {
+                _output.ResetColor();
+            }
+        }
     }
 
     public void Append(ReadOnlySpan<char> characters)
@@ -103,15 +138,15 @@ internal sealed class DualModeOutputDecoder
                 continue;
             }
 
-            if (_useColor && !Console.IsOutputRedirected)
+            if (_useColor && !_output.IsRedirected)
             {
                 if (reset)
                 {
-                    Console.ResetColor();
+                    _output.ResetColor();
                 }
                 else
                 {
-                    Console.ForegroundColor = color;
+                    _output.SetForegroundColor(color);
                 }
             }
 
@@ -223,11 +258,11 @@ internal sealed class DualModeOutputDecoder
         return RecordTerminator.Length;
     }
 
-    private static void WriteText(ReadOnlySpan<char> text)
+    private void WriteText(ReadOnlySpan<char> text)
     {
         if (!text.IsEmpty)
         {
-            Console.Out.Write(text);
+            _output.Write(text);
         }
     }
 
@@ -237,4 +272,41 @@ internal sealed class DualModeOutputDecoder
         Incomplete,
         Valid
     }
+}
+
+internal interface IDualModeOutput
+{
+    bool IsRedirected { get; }
+
+    void Write(ReadOnlySpan<char> text);
+
+    void SetForegroundColor(ConsoleColor color);
+
+    void ResetColor();
+
+    void Flush();
+}
+
+internal sealed class ConsoleDualModeOutput : IDualModeOutput
+{
+    public static ConsoleDualModeOutput Instance { get; } = new();
+
+    public bool IsRedirected => Console.IsOutputRedirected;
+
+    public void Write(ReadOnlySpan<char> text) => Console.Out.Write(text);
+
+    public void SetForegroundColor(ConsoleColor color) =>
+        Console.ForegroundColor = color;
+
+    public void ResetColor() => Console.ResetColor();
+
+    public void Flush() => Console.Out.Flush();
+}
+
+internal static class Utf16LeEncoding
+{
+    public static readonly Encoding Instance = new UnicodeEncoding(
+        bigEndian: false,
+        byteOrderMark: false,
+        throwOnInvalidBytes: true);
 }

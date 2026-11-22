@@ -19,7 +19,6 @@ using System.Globalization;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using System.Text;
 using Microsoft.Win32.SafeHandles;
 
 namespace UE3DualModeConsoleWrapper;
@@ -192,27 +191,7 @@ internal static class DualModeLauncher
         CancellationToken cancellationToken)
     {
         var decoder = new DualModeOutputDecoder(!noColor);
-        using var reader = new StreamReader(
-            pipe,
-            Encoding.Unicode,
-            detectEncodingFromByteOrderMarks: false);
-        var buffer = new char[512];
-        int charactersRead;
-        while ((charactersRead = await reader
-                   .ReadAsync(buffer, cancellationToken)
-                   .ConfigureAwait(false)) > 0)
-        {
-            decoder.Append(buffer.AsSpan(0, charactersRead));
-            Console.Out.Flush();
-        }
-
-        decoder.Flush();
-        if (!noColor && !Console.IsOutputRedirected)
-        {
-            Console.ResetColor();
-        }
-
-        Console.Out.Flush();
+        await decoder.DecodeAsync(pipe, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task ObservePendingConnectionAsync(Task? connection)

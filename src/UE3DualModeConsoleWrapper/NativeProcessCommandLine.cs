@@ -21,9 +21,15 @@ internal static class NativeProcessCommandLine
 {
     public static string Build(string executablePath, IEnumerable<string> arguments)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(executablePath);
+        ArgumentNullException.ThrowIfNull(arguments);
+        RejectEmbeddedNul(executablePath, nameof(executablePath));
+
         var commandLine = new StringBuilder(QuoteArgument(executablePath));
         foreach (var argument in arguments)
         {
+            ArgumentNullException.ThrowIfNull(argument);
+            RejectEmbeddedNul(argument, nameof(arguments));
             commandLine.Append(' ').Append(QuoteArgument(argument));
         }
 
@@ -32,6 +38,9 @@ internal static class NativeProcessCommandLine
 
     internal static string QuoteArgument(string argument)
     {
+        ArgumentNullException.ThrowIfNull(argument);
+        RejectEmbeddedNul(argument, nameof(argument));
+
         if (argument.Length > 0 &&
             argument.IndexOfAny([' ', '\t', '\n', '\v', '"']) < 0)
         {
@@ -60,5 +69,15 @@ internal static class NativeProcessCommandLine
 
         quoted.Append('\\', backslashCount * 2).Append('"');
         return quoted.ToString();
+    }
+
+    private static void RejectEmbeddedNul(string value, string parameterName)
+    {
+        if (value.Contains('\0'))
+        {
+            throw new ArgumentException(
+                "Native command-line values cannot contain an embedded NUL character.",
+                parameterName);
+        }
     }
 }
