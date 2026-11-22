@@ -93,12 +93,12 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
         return 130;
     }
     catch (Exception exception) when (
-        exception is ArgumentException or
-            IOException or
-            InvalidOperationException or
-            PlatformNotSupportedException or
-            UnauthorizedAccessException or
-            Win32Exception)
+        exception is ArgumentException
+            or IOException
+            or InvalidOperationException
+            or PlatformNotSupportedException
+            or UnauthorizedAccessException
+            or Win32Exception)
     {
         Console.Error.WriteLine($"UE3 dual-mode console wrapper failed: {exception.Message}");
         return 1;
