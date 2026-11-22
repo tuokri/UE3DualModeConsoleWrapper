@@ -12,6 +12,8 @@ named `DualMode2`, version `1.0.4791.34615`. The target is the neighboring
 `make`/`make -log` runs. Proprietary binaries, symbols, and log files are not
 part of this repository.
 
+This document contains AI-assisted program analysis.
+
 ## Executable selection
 
 `UDK.com` derives the target path from its own executable path.
@@ -292,15 +294,15 @@ No byte-order mark or terminating NUL is part of an ordinary record.
 
 For the managed `UDK.com` build, the relevant methods are:
 
-| Managed method | Observed role |
-|----------------|---------------|
-| `DualMode2.Program.GetExecutable` | Selects the neighboring/Win32/Win64 target |
-| `DualMode2.Program.Main` | Starts target, creates protocol objects, polls, returns exit code |
-| `DualMode2.Program.ControlCHandler` | Signals server event or kills main target |
-| `DualMode2.NamedPipe.Connect` | Creates and connects the PID pipe |
-| `DualMode2.NamedPipe.Read` | Reads 1024 UTF-16LE bytes |
-| `DualMode2.NamedPipe.SetConsoleText` | Parses reset or four-bit palette control |
-| `DualMode2.NamedPipe.PollOutput` | Writes ordinary text or handles a control |
+| Managed method                       | Observed role                                                     |
+|--------------------------------------|-------------------------------------------------------------------|
+| `DualMode2.Program.GetExecutable`    | Selects the neighboring/Win32/Win64 target                        |
+| `DualMode2.Program.Main`             | Starts target, creates protocol objects, polls, returns exit code |
+| `DualMode2.Program.ControlCHandler`  | Signals server event or kills main target                         |
+| `DualMode2.NamedPipe.Connect`        | Creates and connects the PID pipe                                 |
+| `DualMode2.NamedPipe.Read`           | Reads 1024 UTF-16LE bytes                                         |
+| `DualMode2.NamedPipe.SetConsoleText` | Parses reset or four-bit palette control                          |
+| `DualMode2.NamedPipe.PollOutput`     | Writes ordinary text or handles a control                         |
 
 For the analyzed `UDK.exe` build, the PDB-backed output-device symbols are:
 
