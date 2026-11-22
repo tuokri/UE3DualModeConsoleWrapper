@@ -140,14 +140,14 @@ public sealed class DualModeOutputDecoderTests
     {
         await VerifyResetAsync(
             CreateUtf16Stream("plain text"),
-            CancellationToken.None,
-            configure: null);
+            configure: null,
+            cancellationToken: CancellationToken.None);
 
         await VerifyResetAsync(
             CreateUtf16Stream("unreached"),
-            new CancellationToken(canceled: true),
             configure: null,
-            expectedCancellation: true);
+            expectedCancellation: true,
+            new CancellationToken(canceled: true));
 
         var invalidUtf16 = new FakeDualModeOutput();
         var invalidDecoder = new DualModeOutputDecoder(useColor: true, invalidUtf16);
@@ -222,9 +222,9 @@ public sealed class DualModeOutputDecoderTests
 
     private static async Task VerifyResetAsync(
         Stream stream,
-        CancellationToken cancellationToken,
         Action<FakeDualModeOutput>? configure,
-        bool expectedCancellation = false)
+        bool expectedCancellation = false,
+        CancellationToken cancellationToken = default)
     {
         var output = new FakeDualModeOutput();
         configure?.Invoke(output);
