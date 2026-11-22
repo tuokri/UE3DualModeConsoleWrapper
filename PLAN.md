@@ -279,17 +279,20 @@ Implementation steps:
 
 ### 5. Refactor for responsibility and testability
 
-Split the current single 549-line source file into cohesive components:
+Split the current monolithic source file only where it creates a clear
+implementation or testing benefit:
 
-- `Program`: constructs and invokes the CLI.
-- `CommandLineFactory`: defines options and binds values.
-- `DualModeLauncher`: coordinates the complete child/pipe lifecycle.
-- `SuspendedProcessStarter`: owns `CreateProcessW` and `ResumeThread`.
-- `WindowsCommandLine`: quotes arguments for `CreateProcessW`.
+- `Program`: constructs and parses wrapper CLI options, invokes the launcher,
+  and maps exceptions and exit codes.
+- `DualModeLauncher`: coordinates the complete child/pipe/job lifecycle,
+  including suspended startup, protocol objects, output forwarding, graceful
+  shutdown, forced shutdown, and cleanup.
+- `NativeProcessCommandLine`: quotes and builds the native `CreateProcessW`
+  command line passed from the wrapper to the target process.
 - `DualModeOutputDecoder`: parses text and color-control records.
-- `ProcessShutdownController`: implements graceful and forced shutdown.
 - `NativeMethods`: contains source-generated or generated native definitions.
-- immutable value types for started-process metadata.
+- immutable value types for started-process metadata when a separate
+  representation remains useful.
 
 Implementation rules:
 
@@ -297,20 +300,30 @@ Implementation rules:
    assembly through `InternalsVisibleTo`.
 2. Replace nullable setup state with an explicit lifecycle object only if tests
    show that it simplifies cleanup.
-3. Keep ownership of every process, thread, pipe, event, job, and cancellation
-   source explicit and single.
-4. Remove the unused `StartedProcess` record.
-5. Remove the redundant `_ = outputClosedEvent` statement.
-6. Inject only the unavoidable boundaries:
+3. Keep `Program` as the CLI boundary. Do not introduce `CommandLineFactory`
+   or another wrapper-CLI component unless tests demonstrate a concrete need.
+4. Keep startup and shutdown inside `DualModeLauncher` initially. Do not
+   introduce `SuspendedProcessStarter` or `ProcessShutdownController` unless
+   the lifecycle becomes too complex to test or reason about as one owner.
+5. Keep ownership of every process, thread, pipe, event, job, and cancellation
+   source explicit and single. Small lifecycle and process metadata types may
+   remain local to `DualModeLauncher`.
+6. Remove the unused `StartedProcess` record.
+7. Remove the redundant `_ = outputClosedEvent` statement.
+8. Inject only the unavoidable boundaries:
    - console/output sink;
    - process control;
    - clock/timeout provider if needed.
-7. Do not add a hosting framework, dependency-injection container, MediatR,
+9. Do not add a hosting framework, dependency-injection container, MediatR,
    Spectre.Console, or a plugin system. The tool is too small to benefit.
 
 **Acceptance criteria**
 
-- No production type owns multiple unrelated responsibilities.
+- `Program` is the single wrapper-CLI parsing and exit-code mapping boundary.
+- Native target quoting, output decoding, and native interop are isolated only
+  where their test cases or API boundaries justify separate components.
+- `DualModeLauncher` remains the single owner of the child process and protocol
+  lifecycle.
 - Unit tests use narrow fakes instead of `public` implementation classes or a
   global service locator.
 
@@ -368,7 +381,8 @@ command-line buffer, but isolate and test it.
 
 Quoting changes:
 
-1. Move command-line construction into `WindowsCommandLine`.
+1. Move command-line construction into `NativeProcessCommandLine` so it cannot
+   be confused with wrapper CLI parsing in `Program`.
 2. Reject embedded NUL characters before native launch.
 3. Test spaces, tabs, quotes, empty strings, leading/trailing backslashes, and
    every combination required by the Microsoft CRT command-line rules.
