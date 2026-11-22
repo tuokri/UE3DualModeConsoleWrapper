@@ -99,7 +99,7 @@ Use a name that describes the protocol rather than one product:
 ├─ tests/
 │  ├─ UE3DualModeConsoleWrapper.UnitTests/
 │  ├─ UE3DualModeConsoleWrapper.IntegrationTests/
-│  └─ UE3DualModeConsoleWrapper.TestChild/
+│  └─ UE3DualModeConsoleWrapper.FakeUDK/
 ├─ Directory.Build.props
 ├─ Directory.Packages.props
 ├─ global.json
@@ -620,22 +620,52 @@ test.
 Perform this before deciding whether the E2E suite is worth retaining in every
 CI run.
 
-Build a `TestChild` console program that:
+Build `FakeUDK.exe` as a minimal target-side implementation of the UE3 dual-mode
+protocol. The project remains a synthetic test fixture named
+`UE3DualModeConsoleWrapper.FakeUDK`; CI must never replace it with a real
+`UDK.exe`.
 
-1. uses its own PID to connect to `\\.\pipe\<pid>cout`;
-2. opens `dualmode_die_event<pid>` and signals it before closing the pipe;
-3. opens `ComWrapperShutdown` for cooperative server-shutdown tests;
-4. writes its exact argument array to a test-controlled file;
-5. emits UTF-16LE text and binary color records in deliberately split byte
-   writes, including `1111` and `11111111`;
-6. can close the pipe before remaining alive;
-7. can exit with a selected code;
-8. can block indefinitely;
-9. can start a tracked descendant for process-tree tests.
+`FakeUDK.exe` must:
+
+1. use its own PID to connect to `\\.\pipe\<pid>cout`;
+2. open `dualmode_die_event<pid>` and signal it before closing the pipe;
+3. open `ComWrapperShutdown` for cooperative server-shutdown tests;
+4. write its exact argument array to a test-controlled file;
+5. recognize `make` as its normal E2E command and emit UDK-like UTF-16LE log
+   records for command parsing, script compilation, progress, success, and final
+   elapsed time, plus at least one `Info:`, `Warning:`, and `Error:` record;
+6. simulate compilation for one randomly selected total delay between 200 and
+   1000 milliseconds. Allocate the delay across several visible synthetic work
+   stages and report the selected duration in the controlled result metadata;
+7. emit binary color records in deliberately split byte writes, including
+   `1111` and `11111111`. Use distinct representative foreground colors for
+   normal/info, warning, and error output, and emit `Reset` after each colored
+   record or record group. Treat exact category-to-color constants as a
+   development-time parity check rather than inventing new wire syntax;
+8. close the pipe before remaining alive when the corresponding scenario
+   requests it;
+9. exit with a selected code;
+10. block indefinitely when requested;
+11. start a tracked descendant for process-tree tests.
+
+Keep low-level fault controls separate from normal `make` behavior. Tests may
+select exit-before-connect, close-before-exit, blocked-child, and descendant
+modes through documented target-only arguments or a test fixture configuration;
+none of those controls may alter wrapper CLI parsing.
+
+The existing UDK.com/Ghidra evidence already defines the marker, UTF-16LE
+encoding, binary RGBI payload format, and reset record, so a new debugger session
+is not required merely to implement representative log colors. Before claiming
+exact parity for FakeUDK's info/warning/error colors, perform a narrow PDB-backed
+trace of the UDK log call sites that emit color records and document the exact
+payload chosen for each severity. X64dbg is optional; static PDB-backed Ghidra
+analysis is sufficient if the symbols resolve those call sites.
 
 Required scenarios:
 
-1. Exact argument forwarding, split output, delayed exit after pipe EOF, and exit
+1. Invoke `FakeUDK.exe` with `make`, verify exact argument forwarding and
+   realistic split UTF-16LE info, warning, and error output with distinct valid
+   color records, observe delayed exit after pipe EOF, and propagate exit
    code `7`.
 2. Exit `0` without a pipe connection: wrapper reports a protocol error.
 3. Nonzero exit without a pipe connection: child code is propagated.
@@ -647,12 +677,22 @@ Required scenarios:
 8. Descendant termination through the Job Object.
 9. Abrupt termination of the wrapper followed by child/descendant termination.
 10. Color reset after an injected output failure.
+11. The random `make` workload selects and reports a total synthetic delay
+    between 200 and 1000 milliseconds while the wrapper remains attached and
+    drains all output. Assert the selected fixture value, not the wall-clock
+    duration, so scheduler overhead does not make CI flaky.
+12. Assert that FakeUDK emits at least one info, warning, and error record, and
+    that each is preceded by a valid non-reset binary RGBI color record and
+    followed by `Reset`.
 
 E2E policy:
 
 - Keep the suite if it can complete predictably on `windows-latest` and exposes
   races that unit tests cannot.
 - Require explicit per-test timeouts; cap the whole job.
+- Keep random timing useful but not behavioral: it may vary the scheduling
+  pressure, but output expectations, exit codes, and process cleanup must be
+  deterministic.
 - Investigate any flaky run before merge.
 - Keep a slower real-editor smoke-test script manual; never depend on UDK.com,
   VNEditor, or a game install in CI.
@@ -666,6 +706,10 @@ replace it with a deterministic lower-level test.
 
 - All synthetic scenarios pass repeatedly on Windows.
 - No synthetic child or descendant remains after a successful or failed test.
+- `FakeUDK.exe` exercises `make` through the same pipe, event, UTF-16LE, color,
+  and lifecycle behavior as a UE3 target.
+- FakeUDK's normal `make` run covers distinct info, warning, and error log
+  colors and resets the console after each colored record or record group.
 - The `TESTING.md` document clearly separates synthetic CI tests from manual
   real-editor validation.
 
@@ -765,10 +809,10 @@ The primary job's detailed steps are:
    - all unit tests with the Release configuration and `--no-build`;
    - package vulnerability audit.
 2. `integration-and-publish` work:
-   - use the Release output for the wrapper and `TestChild`;
+   - use the Release output for the wrapper and `FakeUDK.exe`;
    - run synthetic Windows integration tests;
    - collect coverage;
-   - verify no test child remains;
+   - verify no FakeUDK process remains;
    - publish a `win-x64` smoke-test artifact.
 
 Log retention:
