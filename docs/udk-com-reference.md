@@ -90,6 +90,10 @@ handle with the resulting pipe handle. The target writes complete or partial
 UTF-16LE chunks; pipe reads may divide records and code units at arbitrary byte
 boundaries.
 
+If `CreateFileW` cannot open the wrapper pipe, `UDK.exe` does not retry or block
+forever waiting for it. The inherited output-device connection reports failure
+and execution continues through the normal console/file output-device path.
+
 ## Output reads
 
 Each poll requests 1024 bytes into a 1025-byte buffer. The returned byte count
