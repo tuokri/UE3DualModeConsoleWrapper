@@ -17,13 +17,13 @@ $integrationReport = Join-Path $rawCoveragePath 'integration.cobertura.xml'
 $testProjects = @(
     @{
         Project = 'tests\UE3DualModeConsoleWrapper.UnitTests\UE3DualModeConsoleWrapper.UnitTests.csproj'
-        Report = $unitReport
-        Name = 'unit'
+        Report  = $unitReport
+        Name    = 'unit'
     },
     @{
         Project = 'tests\UE3DualModeConsoleWrapper.IntegrationTests\UE3DualModeConsoleWrapper.IntegrationTests.csproj'
-        Report = $integrationReport
-        Name = 'integration'
+        Report  = $integrationReport
+        Name    = 'integration'
     }
 )
 
@@ -71,15 +71,15 @@ try {
 
     $missingReports = @(
         $testProjects |
-            Where-Object { -not (Test-Path -LiteralPath $_.Report) } |
-            ForEach-Object { $_.Name }
+        Where-Object { -not (Test-Path -LiteralPath $_.Report) } |
+        ForEach-Object { $_.Name }
     )
     if ($missingReports.Count -gt 0) {
-        throw "Coverage files were not generated for: $($missingReports -join ', ')."
+        throw "Coverage files were not generated for: $( $missingReports -join ', ' )."
     }
 
     & dotnet reportgenerator `
-        "-reports:$($testProjects.Report -join ';')" `
+        "-reports:$( $testProjects.Report -join ';' )" `
         "-targetdir:$reportPath" `
         '-reporttypes:Html;Cobertura;JsonSummary;TextSummary;Badges'
     if ($LASTEXITCODE -ne 0) {
@@ -94,7 +94,7 @@ try {
         }
     )
     if ($failedTests.Count -gt 0) {
-        throw "Coverage was generated, but test suites failed: $($failedTests -join ', ')."
+        throw "Coverage was generated, but test suites failed: $( $failedTests -join ', ' )."
     }
 }
 finally {
