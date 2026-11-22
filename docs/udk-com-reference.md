@@ -211,12 +211,13 @@ records ending with `Log: Compile aborted due to errors.`,
 wrapper's terminal output. These text records do not contain the marker because
 `UDK.com` consumes color-control records before printing ordinary output.
 
-The concise non-`-log` commandlet path differs: observed VNEditor output begins
-with `Log: Executing Class UnrealEd.MakeCommandlet`, followed by package headings,
-compiler diagnostics, summaries, and elapsed time. It does not show the
-engine-wide `Init:` startup sequence. Lowercase `info:`, `success:`, and `error:`
-messages seen in the older build workflow are emitted by `build.ps1`, not by
-`UDK.exe`, `VNEditor.exe`, or the wrapper.
+Startup visibility without `-log` is target/build-dependent. The observed UDK
+2015 path emits an `Init:` startup prefix before commandlet/compiler output,
+while the observed VNEditor path begins directly with
+`Log: Executing Class UnrealEd.MakeCommandlet` and omits the engine-wide startup
+sequence. Lowercase `info:`, `success:`, and `error:` messages seen in the older
+build workflow are emitted by `build.ps1`, not by `UDK.exe`, `VNEditor.exe`, or
+the wrapper.
 
 The `-log` argument also changes target output routing. In observed real UDK and
 VNEditor runs, the inherited dual-mode pipe carried startup records, then the
@@ -276,6 +277,24 @@ ordinary output.
 
 The wrapper may expose `--no-color` and `NO_COLOR`. When disabled, it must consume
 valid color records and emit only ordinary text.
+
+The target's control-record terminator is part of the control record. The
+wrapper must consume the marker, payload, and trailing `\r\n` together;
+forwarding the control record's CRLF creates visible blank lines around colored
+output.
+
+The custom wrapper currently violates the verified behavior in two independent
+ways:
+
+1. it parses a four-character color payload as a hexadecimal palette index
+   instead of parsing up to eight binary RGBI component digits;
+2. it resumes output after the payload or `Reset` token without consuming the
+   trailing CRLF.
+
+Consequently a real red record such as a binary foreground-red payload is not
+applied, while its CRLF is printed as an extra blank line. `UDK.com` instead
+discards the entire control record and calls `SetConsoleTextAttribute`, which is
+why direct UDK.com runs display red errors without extra blank lines.
 
 ### Output completion and exit code
 

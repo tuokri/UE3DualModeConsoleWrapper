@@ -474,15 +474,19 @@ Tests:
    Windows foreground/background RGBI attributes. `1111` maps to foreground
    white (`0x000f`); it is not an out-of-range hexadecimal value. Parse `Reset`
    case-insensitively and preserve the original console attributes on reset.
-7. Preserve marker, reset, and binary payload behavior across every possible
-   read boundary. Consume valid color records rather than forwarding them.
-8. Catch expected operational exceptions and cleanup `AggregateException` in the
+7. Treat a color control as the entire `marker + payload + CRLF` record. Consume
+   the trailing `\r\n` as part of the control record; forwarding it creates
+   extra blank lines around colored UE3 output.
+8. Preserve marker, reset, binary payload, and terminating CRLF across every
+   possible read boundary. Consume valid color records rather than forwarding
+   them.
+9. Catch expected operational exceptions and cleanup `AggregateException` in the
    top-level boundary.
-9. Report a concise primary message to stderr and preserve the original and
-   cleanup exceptions in one aggregate diagnostic.
-10. Do not catch fatal runtime failures such as stack overflow or out-of-memory
+10. Report a concise primary message to stderr and preserve the original and
+    cleanup exceptions in one aggregate diagnostic.
+11. Do not catch fatal runtime failures such as stack overflow or out-of-memory
     conditions.
-11. Flush output after each complete read batch.
+12. Flush output after each complete read batch.
 
 **Acceptance criteria**
 
@@ -578,8 +582,10 @@ Decoder tests:
 - truncated UTF-16 code units;
 - every split point in the color marker;
 - every split point in `Reset`;
+- every split point in a control record's terminating `\r\n`;
 - every binary foreground/background RGBI payload used by UE3, including
   `0000`, `0001`, `0010`, `0100`, `1000`, `1111`, and `11111111`;
+- no extra blank line is emitted before or after a color or reset record;
 - case-insensitive `Reset`;
 - malformed and incomplete records;
 - redirected-output behavior;
@@ -632,15 +638,16 @@ protocol. The project remains a synthetic test fixture named
 3. open `ComWrapperShutdown` for cooperative server-shutdown tests;
 4. write its exact argument array to a test-controlled file;
 5. recognize `make` as its normal E2E command and emit UDK-like UTF-16LE log
-   records for command parsing, engine initialization, script compilation,
-   progress, success/failure, and final elapsed time. In normal mode without
-   `-log`, begin with concise commandlet output such as
-   `Log: Executing Class UnrealEd.MakeCommandlet`, followed by headings,
-   compiler diagnostics, summaries, and timing. Do not emit `Init:` startup
-   records in this mode. Include at least one `Warning:` and `Error:` record in
-   the dedicated severity-coverage scenario. Lowercase `info:`, `success:`, and
-   `error:` messages are producer-side `build.ps1` output and are not emitted by
-   FakeUDK;
+   records for command parsing, script compilation, progress, success/failure,
+   and final elapsed time. Support a configurable compact or startup-prefix
+   profile. The compact profile begins with
+   `Log: Executing Class UnrealEd.MakeCommandlet`; the startup-prefix profile
+   additionally emits UDK-like `Init:` records. Do not assume that absence of
+   `-log` universally suppresses `Init:`: observed UDK 2015 emits an engine
+   startup prefix without `-log`, while the observed VNEditor path is concise.
+   Include at least one `Warning:` and `Error:` record in the dedicated
+   severity-coverage scenario. Lowercase `info:`, `success:`, and `error:`
+   messages are producer-side `build.ps1` output and are not emitted by FakeUDK;
 6. support an explicit `-log` mode that reproduces the observed UE3 routing
    change: emit `Init:` and early `Log:` startup records to the inherited pipe,
    then disconnect the dual-mode output device and discard later simulated
@@ -698,7 +705,8 @@ Required scenarios:
 12. Assert that the normal no-`-log` path emits concise `Log:`/heading output
     plus dedicated `Warning:` and `Error:` records, each with a valid non-reset
     binary RGBI color record and `Reset` around the colored record or record
-    group. Do not assert `Init:` records on that path.
+    group. Select the compact profile for this assertion and separately cover
+    the startup-prefix profile to model UDK 2015.
 13. Exercise a realistic failed-compile path without `-log`: multiple
     UnrealScript diagnostic lines, a
     `Warning/Error Summary`, `Log: Compile aborted due to errors.`, and
@@ -712,24 +720,25 @@ Required scenarios:
 
 ### FakeUDK end-to-end scenario matrix
 
-| Scenario                                   | FakeUDK input/state                                    | Expected terminal output                                                                                                                                      | Expected wrapper/cleanup result                                                                    |
-|--------------------------------------------|--------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------|
-| Successful commandlet `make`               | `make`; no `-log`; random synthetic delay              | `Log: Executing Class UnrealEd.MakeCommandlet`, package headings, `Scripts successfully compiled...`, `Success - 0 error(s), N warning(s)`, and elapsed time  | Forward all UTF-16LE text, consume color controls, wait through pipe EOF if configured, return `0` |
-| Failed commandlet `make`                   | `make`; synthetic compile failure                      | Package headings, `Error:` compiler diagnostics, `Warning:` records, `Compile aborted due to errors.`, warning/error summary, failure total, and elapsed time | Forward all records, consume color controls, return configured nonzero target code                 |
-| Exact argument forwarding with delayed EOF | Target argument array plus exit code `7`               | Exact commandlet records emitted in split writes; no wrapper-added or missing tokens                                                                          | Preserve exact argument file, continue after pipe EOF until exit, return `7`                       |
-| Severity/color coverage                    | Normal/log, warning, and error records                 | Text for each severity plus no visible `` `~[~` ``/`Reset` marker text                                                                                        | Apply distinct valid RGBI attributes, reset after each record/group, leave terminal color restored |
-| `-log` routing                             | `make -log`                                            | `Init:` and early `Log:` startup records only; later compiler diagnostics and summaries absent                                                                | Wait for normal process exit, propagate its code, do not inspect or merge a log file               |
-| Exit `0` before connection                 | Skip pipe connection and exit `0`                      | No target output                                                                                                                                              | Report protocol error and return wrapper runtime code `1`                                          |
-| Nonzero exit before connection             | Skip pipe connection and exit configured nonzero code  | No target output                                                                                                                                              | Propagate the exact target code                                                                    |
-| First Ctrl+C                               | First signal while FakeUDK is active                   | One `Exiting... Press Ctrl+C again to force exit.` message; target may emit cooperative shutdown/output records                                               | Keep draining, leave child alive during graceful phase, eventually return cancellation code `130`  |
-| Second Ctrl+C                              | Second/later signal or forced path                     | One `Forcing exit...`; output may end mid-record                                                                                                              | Terminate the Job Object idempotently, no surviving child/descendant, return `130`                 |
-| Cooperative server shutdown                | FakeUDK opens `ComWrapperShutdown`                     | Final shutdown text and EOF after event signal                                                                                                                | Continue draining; return normal/cancellation result according to completed state                  |
-| Cancel while connecting                    | Delay or omit pipe connect                             | No ordinary compile output                                                                                                                                    | Terminate target cleanly; no orphan                                                                |
-| Cancel while forwarding                    | Stream deliberately split records during cancellation  | Complete received batches only; no marker/control text                                                                                                        | Terminate target tree and restore color; return `130`                                              |
-| Descendant cleanup                         | FakeUDK starts tracked child                           | Optional startup text from parent                                                                                                                             | Job Object termination removes parent and descendant                                               |
-| Abrupt wrapper termination                 | Wrapper process is externally terminated mid-stream    | Output can stop mid-record                                                                                                                                    | `KILL_ON_JOB_CLOSE` removes FakeUDK and descendants                                                |
-| Output sink failure                        | Emit colored record, then inject wrapper write failure | Colored record may fail to render completely                                                                                                                  | Restore color, stop target, report wrapper runtime failure                                         |
-| Random timing                              | `make` selects a delay in `[200, 1000]` ms             | Same deterministic staged text regardless of selected delay                                                                                                   | Assert the fixture metadata delay is in range, not wall-clock duration                             |
+| Scenario                                   | FakeUDK input/state                                        | Expected terminal output                                                                                                                                                        | Expected wrapper/cleanup result                                                                                                       |
+|--------------------------------------------|------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------|
+| Successful compact commandlet `make`       | `make`; no `-log`; compact profile; random synthetic delay | `Log: Executing Class UnrealEd.MakeCommandlet`, package headings, `Scripts successfully compiled...`, `Success - 0 error(s), N warning(s)`, and elapsed time; no `Init:` prefix | Forward all UTF-16LE text, consume control records including their CRLF, wait through pipe EOF if configured, return `0`              |
+| Successful startup-prefix `make`           | `make`; no `-log`; startup-prefix profile                  | `Init:` startup records followed by commandlet/compiler records                                                                                                                 | Match UDK 2015-style output, preserve ordinary text byte-for-byte, consume only control records, return `0`                           |
+| Failed commandlet `make`                   | `make`; synthetic compile failure                          | Package headings, `Error:` compiler diagnostics, `Warning:` records, `Compile aborted due to errors.`, warning/error summary, failure total, and elapsed time                   | Forward all records, consume color controls, return configured nonzero target code                                                    |
+| Exact argument forwarding with delayed EOF | Target argument array plus exit code `7`                   | Exact commandlet records emitted in split writes; no wrapper-added or missing tokens                                                                                            | Preserve exact argument file, continue after pipe EOF until exit, return `7`                                                          |
+| Severity/color coverage                    | Normal/log, warning, and error records                     | Text for each severity, no visible marker/reset text, and no blank line introduced by control-record CRLF                                                                       | Parse binary RGBI rather than hexadecimal, apply foreground/background attributes, consume record CRLF, leave terminal color restored |
+| `-log` routing                             | `make -log`                                                | `Init:` and early `Log:` startup records only; later compiler diagnostics and summaries absent                                                                                  | Wait for normal process exit, propagate its code, do not inspect or merge a log file                                                  |
+| Exit `0` before connection                 | Skip pipe connection and exit `0`                          | No target output                                                                                                                                                                | Report protocol error and return wrapper runtime code `1`                                                                             |
+| Nonzero exit before connection             | Skip pipe connection and exit configured nonzero code      | No target output                                                                                                                                                                | Propagate the exact target code                                                                                                       |
+| First Ctrl+C                               | First signal while FakeUDK is active                       | One `Exiting... Press Ctrl+C again to force exit.` message; target may emit cooperative shutdown/output records                                                                 | Keep draining, leave child alive during graceful phase, eventually return cancellation code `130`                                     |
+| Second Ctrl+C                              | Second/later signal or forced path                         | One `Forcing exit...`; output may end mid-record                                                                                                                                | Terminate the Job Object idempotently, no surviving child/descendant, return `130`                                                    |
+| Cooperative server shutdown                | FakeUDK opens `ComWrapperShutdown`                         | Final shutdown text and EOF after event signal                                                                                                                                  | Continue draining; return normal/cancellation result according to completed state                                                     |
+| Cancel while connecting                    | Delay or omit pipe connect                                 | No ordinary compile output                                                                                                                                                      | Terminate target cleanly; no orphan                                                                                                   |
+| Cancel while forwarding                    | Stream deliberately split records during cancellation      | Complete received batches only; no marker/control text                                                                                                                          | Terminate target tree and restore color; return `130`                                                                                 |
+| Descendant cleanup                         | FakeUDK starts tracked child                               | Optional startup text from parent                                                                                                                                               | Job Object termination removes parent and descendant                                                                                  |
+| Abrupt wrapper termination                 | Wrapper process is externally terminated mid-stream        | Output can stop mid-record                                                                                                                                                      | `KILL_ON_JOB_CLOSE` removes FakeUDK and descendants                                                                                   |
+| Output sink failure                        | Emit colored record, then inject wrapper write failure     | Colored record may fail to render completely                                                                                                                                    | Restore color, stop target, report wrapper runtime failure                                                                            |
+| Random timing                              | `make` selects a delay in `[200, 1000]` ms                 | Same deterministic staged text regardless of selected delay                                                                                                                     | Assert the fixture metadata delay is in range, not wall-clock duration                                                                |
 
 E2E policy:
 
