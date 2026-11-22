@@ -22,20 +22,27 @@ internal sealed class DualModeOutputDecoder
     private const string ColorMarker = "\u0060~[~\u0060";
     private const string ResetCommand = "Reset";
     private const string RecordTerminator = "\r\n";
-    private const int ForegroundAttributeMask = 0x0f;
-    private const int BackgroundAttributeShift = 4;
+    private const int PalettePayloadLength = 4;
     private const char InactiveComponent = '0';
     private const char ActiveComponent = '1';
-    private static readonly ConsoleAttribute[] ConsoleAttributePayloadOrder =
+    private static readonly ConsoleColor[] ColorPalette =
     [
-        ConsoleAttribute.ForegroundRed,
-        ConsoleAttribute.ForegroundGreen,
-        ConsoleAttribute.ForegroundBlue,
-        ConsoleAttribute.ForegroundIntensity,
-        ConsoleAttribute.BackgroundRed,
-        ConsoleAttribute.BackgroundGreen,
-        ConsoleAttribute.BackgroundBlue,
-        ConsoleAttribute.BackgroundIntensity
+        ConsoleColor.Black,
+        ConsoleColor.Black,
+        ConsoleColor.DarkBlue,
+        ConsoleColor.Blue,
+        ConsoleColor.DarkGreen,
+        ConsoleColor.Green,
+        ConsoleColor.DarkCyan,
+        ConsoleColor.Cyan,
+        ConsoleColor.DarkRed,
+        ConsoleColor.Red,
+        ConsoleColor.DarkMagenta,
+        ConsoleColor.Magenta,
+        ConsoleColor.DarkYellow,
+        ConsoleColor.Yellow,
+        ConsoleColor.Gray,
+        ConsoleColor.White
     ];
 
     private readonly StringBuilder _pending = new();
@@ -82,7 +89,7 @@ internal sealed class DualModeOutputDecoder
                 final,
                 out var recordLength,
                 out var reset,
-                out var consoleAttributes);
+                out var color);
             if (recordState == ControlRecordState.Incomplete)
             {
                 position = markerIndex;
@@ -104,11 +111,7 @@ internal sealed class DualModeOutputDecoder
                 }
                 else
                 {
-                    Console.ForegroundColor =
-                        (ConsoleColor)(consoleAttributes & ForegroundAttributeMask);
-                    Console.BackgroundColor = (ConsoleColor)(
-                        (consoleAttributes >> BackgroundAttributeShift) &
-                        ForegroundAttributeMask);
+                    Console.ForegroundColor = color;
                 }
             }
 
@@ -127,11 +130,11 @@ internal sealed class DualModeOutputDecoder
         bool final,
         out int recordLength,
         out bool reset,
-        out int consoleAttributes)
+        out ConsoleColor color)
     {
         recordLength = 0;
         reset = false;
-        consoleAttributes = 0;
+        color = ConsoleColor.Black;
 
         var resetPrefixLength = Math.Min(ResetCommand.Length, command.Length);
         if (command[..resetPrefixLength].Equals(
@@ -159,50 +162,36 @@ internal sealed class DualModeOutputDecoder
             return resetTerminatorState;
         }
 
-        var payloadLength = 0;
-        while (payloadLength < command.Length &&
-               payloadLength < ConsoleAttributePayloadOrder.Length &&
-               command[payloadLength] is InactiveComponent or ActiveComponent)
-        {
-            payloadLength++;
-        }
-
-        if (payloadLength == 0)
-        {
-            return ControlRecordState.Invalid;
-        }
-
-        if (payloadLength == command.Length)
+        var terminatorIndex = command.IndexOf(RecordTerminator, StringComparison.Ordinal);
+        if (terminatorIndex < 0)
         {
             return final
                 ? ControlRecordState.Invalid
                 : ControlRecordState.Incomplete;
         }
 
-        if (payloadLength == ConsoleAttributePayloadOrder.Length &&
-            command[payloadLength] is InactiveComponent or ActiveComponent)
+        var payload = command[..terminatorIndex];
+        if (payload.Length < PalettePayloadLength)
         {
             return ControlRecordState.Invalid;
         }
 
-        var terminatorLength = TryParseTerminator(
-            command[payloadLength..],
-            final,
-            out var terminatorState);
-        if (terminatorState != ControlRecordState.Valid)
+        var paletteIndex = 0;
+        foreach (var component in payload[..PalettePayloadLength])
         {
-            return terminatorState;
-        }
-
-        for (var index = 0; index < payloadLength; index++)
-        {
-            if (command[index] == ActiveComponent)
+            paletteIndex <<= 1;
+            if (component == ActiveComponent)
             {
-                consoleAttributes |= (int)ConsoleAttributePayloadOrder[index];
+                paletteIndex |= 1;
+            }
+            else if (component != InactiveComponent)
+            {
+                return ControlRecordState.Invalid;
             }
         }
 
-        recordLength = payloadLength + terminatorLength;
+        color = ColorPalette[paletteIndex];
+        recordLength = terminatorIndex + RecordTerminator.Length;
         return ControlRecordState.Valid;
     }
 
@@ -247,18 +236,5 @@ internal sealed class DualModeOutputDecoder
         Invalid,
         Incomplete,
         Valid
-    }
-
-    [Flags]
-    private enum ConsoleAttribute
-    {
-        ForegroundBlue = 0x01,
-        ForegroundGreen = 0x02,
-        ForegroundRed = 0x04,
-        ForegroundIntensity = 0x08,
-        BackgroundBlue = 0x10,
-        BackgroundGreen = 0x20,
-        BackgroundRed = 0x40,
-        BackgroundIntensity = 0x80
     }
 }

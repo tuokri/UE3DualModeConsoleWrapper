@@ -26,10 +26,10 @@ public sealed class DualModeOutputDecoderTests
     }
 
     [Fact]
-    public void MapsBinaryRgbiPayloadsToConsoleAttributes()
+    public void MapsUdkBinaryPalettePayloadsToConsoleColors()
     {
-        // TODO: Cover 0000, 0001, 0010, 0100, 1000, 1111, and 11111111.
-        Assert.Fail("TODO: Verify binary RGBI color mapping.");
+        // TODO: Cover all 0000 through 1111 palette entries, including 0001 as Black.
+        Assert.Fail("TODO: Verify UDK foreground palette mapping.");
     }
 
     [Fact]
@@ -40,10 +40,10 @@ public sealed class DualModeOutputDecoderTests
     }
 
     [Fact]
-    public void AppliesForegroundAndBackgroundRgbIAttributes()
+    public void IgnoresPayloadSuffixWithoutApplyingBackgroundColor()
     {
-        // TODO: Assert binary RGBI positions map to foreground and background attributes.
-        Assert.Fail("TODO: Verify foreground and background RGBI attributes.");
+        // TODO: Assert 11111111 consumes the full record and still selects palette entry 1111.
+        Assert.Fail("TODO: Verify longer palette payload suffix handling.");
     }
 
     [Fact]

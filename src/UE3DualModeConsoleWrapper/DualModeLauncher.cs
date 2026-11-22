@@ -63,9 +63,15 @@ internal static class DualModeLauncher
                 outBufferSize: 1024);
             using var outputClosedEvent = new EventWaitHandle(
                 initialState: false,
-                EventResetMode.AutoReset,
+                EventResetMode.ManualReset,
                 "dualmode_die_event" + started.ProcessId.ToString(CultureInfo.InvariantCulture));
             // The target signals this event when it closes its output-pipe client.
+            using var shutdownEvent = new EventWaitHandle(
+                initialState: false,
+                EventResetMode.ManualReset,
+                "ComWrapperShutdown");
+            using var shutdownRegistration = cancellationToken.Register(
+                () => shutdownEvent.Set());
 
             connectionCancellation =
                 CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

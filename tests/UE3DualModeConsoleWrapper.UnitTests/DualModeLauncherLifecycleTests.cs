@@ -7,6 +7,13 @@ namespace UE3DualModeConsoleWrapper.UnitTests;
 public sealed class DualModeLauncherLifecycleTests
 {
     [Fact]
+    public void CreatesManualResetProtocolEvents()
+    {
+        // TODO: Verify dualmode_die_event<PID> and ComWrapperShutdown are manual reset.
+        Assert.Fail("TODO: Verify protocol event reset modes.");
+    }
+
+    [Fact]
     public void FirstSignalUsesCooperativeShutdownAndKeepsDraining()
     {
         // TODO: Verify ComWrapperShutdown signaling and continued output draining.
