@@ -4,7 +4,7 @@ using Xunit;
 namespace UE3DualModeConsoleWrapper.UnitTests;
 
 [SupportedOSPlatform("windows")]
-public sealed class ProcessShutdownControllerTests
+public sealed class DualModeLauncherLifecycleTests
 {
     [Fact]
     public void FirstSignalUsesCooperativeShutdownAndKeepsDraining()

@@ -4,7 +4,7 @@ using Xunit;
 namespace UE3DualModeConsoleWrapper.UnitTests;
 
 [SupportedOSPlatform("windows")]
-public sealed class WindowsCommandLineTests
+public sealed class NativeProcessCommandLineTests
 {
     [Fact]
     public void QuotesWindowsCommandLineTokens()

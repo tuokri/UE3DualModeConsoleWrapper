@@ -2,12 +2,12 @@ using Xunit;
 
 namespace UE3DualModeConsoleWrapper.UnitTests;
 
-public sealed class CommandLineFactoryTests
+public sealed class ProgramCommandLineTests
 {
     [Fact]
     public void RequiresExecutableAndDelimiter()
     {
-        // TODO: Implement parser tests after CommandLineFactory is extracted.
+        // TODO: Implement parser tests around the CLI defined in Program.
         Assert.Fail("TODO: Verify required options and target-argument delimiter handling.");
     }
 

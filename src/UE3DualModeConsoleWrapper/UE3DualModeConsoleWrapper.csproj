@@ -6,6 +6,11 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <InternalsVisibleTo Include="UE3DualModeConsoleWrapper.UnitTests" />
+      <InternalsVisibleTo Include="UE3DualModeConsoleWrapper.IntegrationTests" />
+    </ItemGroup>
+
+    <ItemGroup>
       <PackageReference Include="MinVer">
         <PrivateAssets>all</PrivateAssets>
         <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
