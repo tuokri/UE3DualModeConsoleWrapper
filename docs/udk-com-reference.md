@@ -14,6 +14,8 @@ binaries and debug symbols are not part of this repository.
 
 This is a build-specific baseline. Revalidate it after a UDK target changes.
 
+This document contains AI-assisted program analysis.
+
 ## Normative terms
 
 - **Must** describes behavior required for compatibility.
