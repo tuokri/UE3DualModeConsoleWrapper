@@ -9,7 +9,7 @@ public sealed class DualModeProtocolIntegrationTests
     [Fact(Timeout = 30_000)]
     public void ForwardsArgumentsOutputAndExitCode()
     {
-        // TODO: Launch TestChild with split UTF-16LE output and delayed exit code 7.
+        // TODO: Launch FakeUDK with split UTF-16LE output and delayed exit code 7.
         _ = TestContext.Current.CancellationToken;
         Assert.Fail("TODO: Verify exact argument, output, EOF, and exit-code behavior.");
     }

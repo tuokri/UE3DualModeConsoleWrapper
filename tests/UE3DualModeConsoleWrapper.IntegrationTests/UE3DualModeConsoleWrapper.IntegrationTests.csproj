@@ -14,7 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\UE3DualModeConsoleWrapper.TestChild\UE3DualModeConsoleWrapper.TestChild.csproj" />
+    <ProjectReference Include="..\UE3DualModeConsoleWrapper.FakeUDK\UE3DualModeConsoleWrapper.FakeUDK.csproj" />
     <ProjectReference Include="..\..\src\UE3DualModeConsoleWrapper\UE3DualModeConsoleWrapper.csproj" />
   </ItemGroup>
 

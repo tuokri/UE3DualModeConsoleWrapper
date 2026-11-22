@@ -185,14 +185,17 @@
           "xunit.v3.runner.common": "[4.0.3]"
         }
       },
-      "ue3dualmodeconsolewrapper": {
+      "FakeUDK": {
         "type": "Project",
         "dependencies": {
           "System.CommandLine": "[3.0.0, )"
         }
       },
-      "ue3dualmodeconsolewrapper.testchild": {
-        "type": "Project"
+      "ue3dualmodeconsolewrapper": {
+        "type": "Project",
+        "dependencies": {
+          "System.CommandLine": "[3.0.0, )"
+        }
       },
       "System.CommandLine": {
         "type": "CentralTransitive",
