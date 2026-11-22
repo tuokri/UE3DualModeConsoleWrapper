@@ -79,7 +79,7 @@ command.SetAction(async (parseResult, cancellationToken) =>
         options.ClosePipeBeforeExit = true;
     }
 
-    if (options.FailCompilation && options.ExitCode == 0)
+    if (options is { FailCompilation: true, ExitCode: 0 })
     {
         options.ExitCode = 1;
     }
@@ -97,10 +97,12 @@ internal static class FakeUDK
     private const string ResetCommand = "Reset";
     public const int MinimumCompileDelayMilliseconds = 200;
     public const int MaximumCompileDelayMilliseconds = 1000;
+
     private static readonly Encoding OutputEncoding = new UnicodeEncoding(
         bigEndian: false,
         byteOrderMark: false,
         throwOnInvalidBytes: true);
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true
@@ -166,7 +168,7 @@ internal static class FakeUDK
                 PipeOptions.Asynchronous);
             metadata.State = "connecting-pipe";
             WriteMetadata(options.MetadataPath, metadata);
-            pipe.Connect();
+            await pipe.ConnectAsync(cancellationToken);
             metadata.PipeConnected = true;
 
             closeEvent = EventWaitHandle.OpenExisting(
@@ -184,8 +186,8 @@ internal static class FakeUDK
                 metadata.State = "shutdown-requested";
                 WriteMetadata(options.MetadataPath, metadata);
                 await WriteRecordAsync(
-                    pipe,
-                    "Log: Cooperative shutdown requested\r\n")
+                        pipe,
+                        "Log: Cooperative shutdown requested\r\n")
                     .ConfigureAwait(false);
             }
             else
@@ -208,13 +210,13 @@ internal static class FakeUDK
                 metadata.PipeClosed = true;
                 WriteMetadata(options.MetadataPath, metadata);
                 closeEvent.Set();
-                pipe.Dispose();
+                await pipe.DisposeAsync();
                 pipe = null;
 
                 if (options.DelayAfterCloseMilliseconds > 0)
                 {
                     await Task
-                        .Delay(options.DelayAfterCloseMilliseconds)
+                        .Delay(options.DelayAfterCloseMilliseconds, cancellationToken)
                         .WaitAsync(cancellationToken)
                         .ConfigureAwait(false);
                 }
@@ -232,7 +234,11 @@ internal static class FakeUDK
                 closeEvent.Set();
             }
 
-            pipe?.Dispose();
+            if (pipe is not null)
+            {
+                await pipe.DisposeAsync();
+            }
+
             closeEvent?.Dispose();
             shutdownEvent?.Dispose();
             metadata.PipeClosed = true;
@@ -265,10 +271,10 @@ internal static class FakeUDK
                     "Log: Executing Class UnrealEd.MakeCommandlet\r\n")
                 .ConfigureAwait(false);
             var completed = await Task
-                    .WhenAny(
-                        Task.Delay(options.SelectedDelayMilliseconds, cancellationToken),
-                        shutdownTask)
-                    .ConfigureAwait(false);
+                .WhenAny(
+                    Task.Delay(options.SelectedDelayMilliseconds, cancellationToken),
+                    shutdownTask)
+                .ConfigureAwait(false);
             if (completed == shutdownTask)
             {
                 metadata.ShutdownRequested = true;
@@ -334,7 +340,8 @@ internal static class FakeUDK
                     "Synthetic.uc(23) : Error, Bad command or expression\r\n")
                 .ConfigureAwait(false);
             await WriteRecordAsync(pipe, "Compile aborted due to errors.\r\n").ConfigureAwait(false);
-            await WriteRecordAsync(pipe, "\r\nWarning/Error Summary\r\n---------------------\r\n").ConfigureAwait(false);
+            await WriteRecordAsync(pipe, "\r\nWarning/Error Summary\r\n---------------------\r\n")
+                .ConfigureAwait(false);
             await WriteSeverityRecordAsync(
                     pipe,
                     "1001",
@@ -354,7 +361,8 @@ internal static class FakeUDK
         await WriteRecordAsync(
                 pipe,
                 $"Execution of commandlet took:  " +
-                $"{(options.SelectedDelayMilliseconds / 1000.0).ToString("0.00", CultureInfo.InvariantCulture)} seconds\r\n")
+                $"{(options.SelectedDelayMilliseconds / 1000.0).ToString(
+                    "0.00", CultureInfo.InvariantCulture)} seconds\r\n")
             .ConfigureAwait(false);
         metadata.State = "compilation-finished";
         WriteMetadata(options.MetadataPath, metadata);
@@ -445,14 +453,19 @@ internal static class FakeUDK
 
     private static int StartDescendant()
     {
-        var startInfo = new ProcessStartInfo(Environment.ProcessPath!)
+        if (Environment.ProcessPath is null)
+        {
+            throw new InvalidOperationException("ProcessPath is null.");
+        }
+
+        var startInfo = new ProcessStartInfo(Environment.ProcessPath)
         {
             UseShellExecute = false
         };
         startInfo.ArgumentList.Add("--fake-child");
 
         var child = Process.Start(startInfo) ??
-                   throw new InvalidOperationException("Failed to start FakeUDK descendant.");
+                    throw new InvalidOperationException("Failed to start FakeUDK descendant.");
         return child.Id;
     }
 
@@ -476,17 +489,11 @@ internal static class FakeUDK
             new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
     }
 
-    private sealed class FakeCompilationStage
+    private sealed class FakeCompilationStage(string name, string output)
     {
-        public FakeCompilationStage(string name, string output)
-        {
-            Name = name;
-            Output = output;
-        }
+        public string Name { get; } = name;
 
-        public string Name { get; }
-
-        public string Output { get; }
+        public string Output { get; } = output;
 
         public int DelayMilliseconds { get; set; }
     }
@@ -527,31 +534,31 @@ internal static class FakeUDK
 
 internal sealed class FakeUDKOptions
 {
-    public FakeUDKProfile Profile { get; set; } = FakeUDKProfile.Compact;
+    public FakeUDKProfile Profile { get; init; } = FakeUDKProfile.Compact;
 
-    public bool UseLogRouting { get; set; }
+    public bool UseLogRouting { get; init; }
 
-    public bool SkipPipeConnection { get; set; }
+    public bool SkipPipeConnection { get; init; }
 
     public bool ClosePipeBeforeExit { get; set; } = true;
 
-    public bool Block { get; set; }
+    public bool Block { get; init; }
 
-    public bool FailCompilation { get; set; }
+    public bool FailCompilation { get; init; }
 
-    public bool StartDescendant { get; set; }
+    public bool StartDescendant { get; init; }
 
-    public bool ChildMode { get; set; }
+    public bool ChildMode { get; init; }
 
     public int ExitCode { get; set; }
 
-    public int SelectedDelayMilliseconds { get; set; }
+    public int SelectedDelayMilliseconds { get; init; }
 
-    public int ConnectionDelayMilliseconds { get; set; }
+    public int ConnectionDelayMilliseconds { get; init; }
 
-    public int DelayAfterCloseMilliseconds { get; set; }
+    public int DelayAfterCloseMilliseconds { get; init; }
 
-    public string? MetadataPath { get; set; }
+    public string? MetadataPath { get; init; }
 
     public void Validate()
     {
