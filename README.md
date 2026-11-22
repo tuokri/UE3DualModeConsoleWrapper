@@ -2,6 +2,14 @@
 
 ## Development
 
+### Build and test
+
+```powershell
+dotnet format
+dotnet build
+dotnet test
+```
+
 ### PowerShell tooling
 
 [PSScriptAnalyzer](https://learn.microsoft.com/en-us/powershell/module/psscriptanalyzer/?view=ps-modules)
