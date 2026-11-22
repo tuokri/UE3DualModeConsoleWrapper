@@ -1,3 +1,18 @@
+# Copyright (C) 2026 Tuomo Kriikkula
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published
+# by the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 [CmdletBinding()]
 param(
     [switch]$SkipBuild,
@@ -8,12 +23,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$artifactsPath = Join-Path $repositoryRoot $ArtifactsDirectory
-$rawCoveragePath = Join-Path $artifactsPath 'coverage/raw'
-$reportPath = Join-Path $artifactsPath 'coverage/report'
-$unitReport = Join-Path $rawCoveragePath 'unit.cobertura.xml'
-$integrationReport = Join-Path $rawCoveragePath 'integration.cobertura.xml'
+$repositoryRoot = (Resolve-Path -Path (Join-Path -Path $PSScriptRoot -ChildPath '..')).Path
+$artifactsPath = Join-Path -Path $repositoryRoot -ChildPath $ArtifactsDirectory
+$rawCoveragePath = Join-Path -Path $artifactsPath -ChildPath 'coverage/raw'
+$reportPath = Join-Path -Path $artifactsPath -ChildPath 'coverage/report'
+$unitReport = Join-Path -Path $rawCoveragePath -ChildPath 'unit.cobertura.xml'
+$integrationReport = Join-Path -Path $rawCoveragePath -ChildPath 'integration.cobertura.xml'
 $testProjects = @(
     @{
         Project = 'tests\UE3DualModeConsoleWrapper.UnitTests\UE3DualModeConsoleWrapper.UnitTests.csproj'
@@ -27,7 +42,7 @@ $testProjects = @(
     }
 )
 
-Push-Location $repositoryRoot
+Push-Location -Path $repositoryRoot
 try {
     & dotnet tool restore
     if ($LASTEXITCODE -ne 0) {
@@ -40,10 +55,14 @@ try {
             throw "dotnet restore failed with exit code $LASTEXITCODE."
         }
 
-        & dotnet build UE3DualModeConsoleWrapper.slnx `
-            --configuration $Configuration `
-            --no-restore `
-            -warnaserror
+        $buildArguments = @(
+            'build'
+            'UE3DualModeConsoleWrapper.slnx'
+            '--configuration', $Configuration
+            '--no-restore'
+            '-warnaserror'
+        )
+        & dotnet @buildArguments
         if ($LASTEXITCODE -ne 0) {
             throw "dotnet build failed with exit code $LASTEXITCODE."
         }
@@ -54,18 +73,21 @@ try {
         Remove-Item -LiteralPath $reportPath -Recurse -Force
     }
     New-Item -ItemType Directory -Force -Path $reportPath | Out-Null
-    Remove-Item -Force -ErrorAction SilentlyContinue $unitReport, $integrationReport
+    Remove-Item -LiteralPath $unitReport, $integrationReport -Force -ErrorAction SilentlyContinue
 
     $testExitCodes = @()
     foreach ($test in $testProjects) {
-        & dotnet run `
-            --project $test.Project `
-            --configuration $Configuration `
-            --no-build `
-            -- `
-            --coverage `
-            --coverage-output-format cobertura `
-            --coverage-output $test.Report
+        $testArguments = @(
+            'run'
+            '--project', $test.Project
+            '--configuration', $Configuration
+            '--no-build'
+            '--'
+            '--coverage'
+            '--coverage-output-format', 'cobertura'
+            '--coverage-output', $test.Report
+        )
+        & dotnet @testArguments
         $testExitCodes += $LASTEXITCODE
     }
 
@@ -78,10 +100,13 @@ try {
         throw "Coverage files were not generated for: $( $missingReports -join ', ' )."
     }
 
-    & dotnet reportgenerator `
-        "-reports:$( $testProjects.Report -join ';' )" `
-        "-targetdir:$reportPath" `
+    $reportGeneratorArguments = @(
+        'reportgenerator'
+        "-reports:$( $testProjects.Report -join ';' )"
+        "-targetdir:$reportPath"
         '-reporttypes:Html;Cobertura;JsonSummary;TextSummary;Badges'
+    )
+    & dotnet @reportGeneratorArguments
     if ($LASTEXITCODE -ne 0) {
         throw "ReportGenerator failed with exit code $LASTEXITCODE."
     }
