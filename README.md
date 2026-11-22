@@ -1,5 +1,22 @@
 ﻿# UE3 Dual Mode Console Wrapper
 
+## Development
+
+### PowerShell tooling
+
+[PSScriptAnalyzer](https://learn.microsoft.com/en-us/powershell/module/psscriptanalyzer/?view=ps-modules)
+must be available in PowerShell. Format scripts in place with:
+
+```powershell
+pwsh -File scripts/Format-PowerShell.ps1
+```
+
+Analyze PowerShell files:
+
+```powershell
+pwsh -File scripts/Analyze-PowerShell.ps1
+```
+
 ## License
 
 ```

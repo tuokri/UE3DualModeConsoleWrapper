@@ -43,15 +43,19 @@ $testProjects = @(
 )
 
 Push-Location -Path $repositoryRoot
-try {
+try
+{
     & dotnet tool restore
-    if ($LASTEXITCODE -ne 0) {
+    if ($LASTEXITCODE -ne 0)
+    {
         throw "dotnet tool restore failed with exit code $LASTEXITCODE."
     }
 
-    if (-not $SkipBuild) {
+    if (-not $SkipBuild)
+    {
         & dotnet restore UE3DualModeConsoleWrapper.slnx --locked-mode
-        if ($LASTEXITCODE -ne 0) {
+        if ($LASTEXITCODE -ne 0)
+        {
             throw "dotnet restore failed with exit code $LASTEXITCODE."
         }
 
@@ -63,20 +67,23 @@ try {
             '-warnaserror'
         )
         & dotnet @buildArguments
-        if ($LASTEXITCODE -ne 0) {
+        if ($LASTEXITCODE -ne 0)
+        {
             throw "dotnet build failed with exit code $LASTEXITCODE."
         }
     }
 
     New-Item -ItemType Directory -Force -Path $rawCoveragePath | Out-Null
-    if (Test-Path -LiteralPath $reportPath) {
+    if (Test-Path -LiteralPath $reportPath)
+    {
         Remove-Item -LiteralPath $reportPath -Recurse -Force
     }
     New-Item -ItemType Directory -Force -Path $reportPath | Out-Null
     Remove-Item -LiteralPath $unitReport, $integrationReport -Force -ErrorAction SilentlyContinue
 
     $testExitCodes = @()
-    foreach ($test in $testProjects) {
+    foreach ($test in $testProjects)
+    {
         $testArguments = @(
             'run'
             '--project', $test.Project
@@ -93,10 +100,11 @@ try {
 
     $missingReports = @(
         $testProjects |
-        Where-Object { -not (Test-Path -LiteralPath $_.Report) } |
-        ForEach-Object { $_.Name }
+            Where-Object { -not (Test-Path -LiteralPath $_.Report) } |
+            ForEach-Object { $_.Name }
     )
-    if ($missingReports.Count -gt 0) {
+    if ($missingReports.Count -gt 0)
+    {
         throw "Coverage files were not generated for: $( $missingReports -join ', ' )."
     }
 
@@ -107,21 +115,26 @@ try {
         '-reporttypes:Html;Cobertura;JsonSummary;TextSummary;Badges'
     )
     & dotnet @reportGeneratorArguments
-    if ($LASTEXITCODE -ne 0) {
+    if ($LASTEXITCODE -ne 0)
+    {
         throw "ReportGenerator failed with exit code $LASTEXITCODE."
     }
 
     $failedTests = @(
-        for ($index = 0; $index -lt $testExitCodes.Count; $index++) {
-            if ($testExitCodes[$index] -ne 0) {
+        for ($index = 0; $index -lt $testExitCodes.Count; $index++)
+        {
+            if ($testExitCodes[$index] -ne 0)
+            {
                 $testProjects[$index].Name
             }
         }
     )
-    if ($failedTests.Count -gt 0) {
+    if ($failedTests.Count -gt 0)
+    {
         throw "Coverage was generated, but test suites failed: $( $failedTests -join ', ' )."
     }
 }
-finally {
+finally
+{
     Pop-Location
 }

@@ -31,6 +31,10 @@ jobs:
       - name: Verify formatting
         run: dotnet format UE3DualModeConsoleWrapper.slnx --no-restore --verify-no-changes
 
+      - name: Analyze PowerShell
+        shell: pwsh
+        run: ./scripts/Analyze-PowerShell.ps1
+
       - name: Build Release
         run: >-
           dotnet build UE3DualModeConsoleWrapper.slnx
