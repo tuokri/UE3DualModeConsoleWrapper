@@ -17,7 +17,9 @@ using System.Text;
 
 namespace UE3DualModeConsoleWrapper;
 
-internal sealed class DualModeOutputDecoder
+internal sealed class DualModeOutputDecoder(
+    bool useColor,
+    IDualModeOutput? output = null)
 {
     private const string ColorMarker = "\u0060~[~\u0060";
     private const string ResetCommand = "Reset";
@@ -25,6 +27,7 @@ internal sealed class DualModeOutputDecoder
     private const int PalettePayloadLength = 4;
     private const char InactiveComponent = '0';
     private const char ActiveComponent = '1';
+
     private static readonly ConsoleColor[] ColorPalette =
     [
         ConsoleColor.Black,
@@ -46,16 +49,7 @@ internal sealed class DualModeOutputDecoder
     ];
 
     private readonly StringBuilder _pending = new();
-    private readonly bool _useColor;
-    private readonly IDualModeOutput _output;
-
-    public DualModeOutputDecoder(
-        bool useColor,
-        IDualModeOutput? output = null)
-    {
-        _useColor = useColor;
-        _output = output ?? ConsoleDualModeOutput.Instance;
-    }
+    private readonly IDualModeOutput _output = output ?? ConsoleDualModeOutput.Instance;
 
     public async Task DecodeAsync(Stream stream, CancellationToken cancellationToken)
     {
@@ -81,7 +75,7 @@ internal sealed class DualModeOutputDecoder
         }
         finally
         {
-            if (_useColor && !_output.IsRedirected)
+            if (useColor && !_output.IsRedirected)
             {
                 _output.ResetColor();
             }
@@ -138,7 +132,7 @@ internal sealed class DualModeOutputDecoder
                 continue;
             }
 
-            if (_useColor && !_output.IsRedirected)
+            if (useColor && !_output.IsRedirected)
             {
                 if (reset)
                 {

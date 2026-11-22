@@ -69,8 +69,7 @@ internal static class DualModeLauncher
                 initialState: false,
                 EventResetMode.ManualReset,
                 "ComWrapperShutdown");
-            using var shutdownRegistration = cancellationToken.Register(
-                () => shutdownEvent.Set());
+            await using var shutdownRegistration = cancellationToken.Register(() => shutdownEvent.Set());
 
             connectionCancellation =
                 CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -91,7 +90,7 @@ internal static class DualModeLauncher
             var firstCompleted = await Task.WhenAny(pipeConnection, processExit).ConfigureAwait(false);
             if (firstCompleted == processExit && !pipe.IsConnected && !pipeConnection.IsCompleted)
             {
-                connectionCancellation.Cancel();
+                await connectionCancellation.CancelAsync();
                 try
                 {
                     await pipeConnection.ConfigureAwait(false);
@@ -117,7 +116,11 @@ internal static class DualModeLauncher
         }
         catch (Exception operationError)
         {
-            connectionCancellation?.Cancel();
+            if (connectionCancellation is not null)
+            {
+                await connectionCancellation.CancelAsync();
+            }
+
             await ObservePendingConnectionAsync(pipeConnection).ConfigureAwait(false);
             try
             {

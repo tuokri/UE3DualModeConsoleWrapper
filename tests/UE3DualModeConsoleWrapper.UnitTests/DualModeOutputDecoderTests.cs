@@ -25,8 +25,7 @@ public sealed class DualModeOutputDecoderTests
         var decoder = new DualModeOutputDecoder(useColor: true, output);
         await using var stream = new MemoryStream([0x41]);
 
-        await Assert.ThrowsAsync<DecoderFallbackException>(
-            () => decoder.DecodeAsync(stream, CancellationToken.None));
+        await Assert.ThrowsAsync<DecoderFallbackException>(() => decoder.DecodeAsync(stream, CancellationToken.None));
 
         Assert.Equal(1, output.ResetCount);
 
@@ -37,10 +36,9 @@ public sealed class DualModeOutputDecoderTests
         await using var isolatedSurrogateStream =
             new MemoryStream([0x00, 0xD8]);
 
-        await Assert.ThrowsAsync<DecoderFallbackException>(
-            () => isolatedSurrogateDecoder.DecodeAsync(
-                isolatedSurrogateStream,
-                CancellationToken.None));
+        await Assert.ThrowsAsync<DecoderFallbackException>(() => isolatedSurrogateDecoder.DecodeAsync(
+            isolatedSurrogateStream,
+            CancellationToken.None));
 
         Assert.Equal(1, isolatedSurrogateOutput.ResetCount);
     }
@@ -153,10 +151,9 @@ public sealed class DualModeOutputDecoderTests
 
         var invalidUtf16 = new FakeDualModeOutput();
         var invalidDecoder = new DualModeOutputDecoder(useColor: true, invalidUtf16);
-        await Assert.ThrowsAsync<DecoderFallbackException>(
-            () => invalidDecoder.DecodeAsync(
-                new MemoryStream([0x41]),
-                CancellationToken.None));
+        await Assert.ThrowsAsync<DecoderFallbackException>(() => invalidDecoder.DecodeAsync(
+            new MemoryStream([0x41]),
+            CancellationToken.None));
         Assert.Equal(1, invalidUtf16.ResetCount);
 
         var outputFailure = new FakeDualModeOutput
@@ -166,10 +163,9 @@ public sealed class DualModeOutputDecoderTests
         var outputFailureDecoder = new DualModeOutputDecoder(
             useColor: true,
             outputFailure);
-        await Assert.ThrowsAsync<IOException>(
-            () => outputFailureDecoder.DecodeAsync(
-                CreateUtf16Stream("text"),
-                CancellationToken.None));
+        await Assert.ThrowsAsync<IOException>(() => outputFailureDecoder.DecodeAsync(
+            CreateUtf16Stream("text"),
+            CancellationToken.None));
         Assert.Equal(1, outputFailure.ResetCount);
 
         var colorFailure = new FakeDualModeOutput
@@ -179,10 +175,9 @@ public sealed class DualModeOutputDecoderTests
         var colorFailureDecoder = new DualModeOutputDecoder(
             useColor: true,
             colorFailure);
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => colorFailureDecoder.DecodeAsync(
-                CreateUtf16Stream("`~[~`1001\r\n"),
-                CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => colorFailureDecoder.DecodeAsync(
+            CreateUtf16Stream("`~[~`1001\r\n"),
+            CancellationToken.None));
         Assert.Equal(1, colorFailure.ResetCount);
     }
 
@@ -217,13 +212,13 @@ public sealed class DualModeOutputDecoderTests
         Assert.Empty(output.ForegroundColors);
     }
 
-    public static TheoryData<string> MalformedControlRecords => new()
-    {
+    public static TheoryData<string> MalformedControlRecords =>
+    [
         "`~[~`12xx\r\n",
         "`~[~`100",
         "`~[~`1001\n",
         "`~[~`Res"
-    };
+    ];
 
     private static async Task VerifyResetAsync(
         Stream stream,
@@ -237,8 +232,8 @@ public sealed class DualModeOutputDecoderTests
 
         if (expectedCancellation)
         {
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(
-                () => decoder.DecodeAsync(stream, cancellationToken));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                decoder.DecodeAsync(stream, cancellationToken));
         }
         else
         {
