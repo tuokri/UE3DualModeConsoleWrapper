@@ -1,0 +1,6 @@
+{
+  "powershell.codeFormatting.preset": "Allman",
+  "[powershell]": {
+    "editor.defaultFormatter": "ms-vscode.powershell"
+  }
+}

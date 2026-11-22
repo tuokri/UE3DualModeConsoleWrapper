@@ -33,7 +33,7 @@ jobs:
 
       - name: Analyze PowerShell
         shell: pwsh
-        run: ./scripts/Analyze-PowerShell.ps1
+        run: ./scripts/Analyze-PowerShell.ps1 -OutputFormat GitHub
 
       - name: Build Release
         run: >-
