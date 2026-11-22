@@ -171,22 +171,22 @@ AircraftMod source, examples, workflow references, package identity, or
 ### 3. Pin a modern .NET and C# baseline
 
 1. Pin the stable .NET 11 SDK in `global.json`:
-   - prefer the newest installed/stable `11.0.x`;
-   - use `rollForward: latestPatch`;
-   - disallow prerelease SDKs.
+    - prefer the newest installed/stable `11.0.x`;
+    - use `rollForward: latestPatch`;
+    - disallow prerelease SDKs.
 2. If a newer stable .NET/C# release exists when implementation starts, update the
    baseline rather than forcing an obsolete version. Do not silently use a
    preview language mode.
 3. Add `Directory.Build.props` with:
-   - `TargetFramework` `net11.0` for the verified baseline;
-   - `LangVersion` `15.0`;
-   - nullable reference types and implicit usings enabled;
-   - `TreatWarningsAsErrors`;
-   - `EnableNETAnalyzers`;
-   - latest stable analyzer level;
-   - code-style enforcement in build;
-   - deterministic builds;
-   - Source Link and repository metadata for tagged builds.
+    - `TargetFramework` `net11.0` for the verified baseline;
+    - `LangVersion` `15.0`;
+    - nullable reference types and implicit usings enabled;
+    - `TreatWarningsAsErrors`;
+    - `EnableNETAnalyzers`;
+    - latest stable analyzer level;
+    - code-style enforcement in build;
+    - deterministic builds;
+    - Source Link and repository metadata for tagged builds.
 4. Add central package management in `Directory.Packages.props`.
 5. Add locked `packages.lock.json` files or equivalent locked restore inputs.
 6. Configure `DebugType` as `portable` for managed projects in both Debug and
@@ -202,7 +202,7 @@ AircraftMod source, examples, workflow references, package identity, or
    prerelease dependencies, or moving major tags for actions in final workflows.
 10. Add `.config/dotnet-tools.json` for `dotnet format` and ReportGenerator.
 11. Confirm every selected dependency supports .NET 11 and the current C#
-   language version.
+    language version.
 
 Suggested dependency baseline to recheck at implementation time:
 
@@ -311,9 +311,9 @@ Implementation rules:
 6. Remove the unused `StartedProcess` record.
 7. Remove the redundant `_ = outputClosedEvent` statement.
 8. Inject only the unavoidable boundaries:
-   - console/output sink;
-   - process control;
-   - clock/timeout provider if needed.
+    - console/output sink;
+    - process control;
+    - clock/timeout provider if needed.
 9. Do not add a hosting framework, dependency-injection container, MediatR,
    Spectre.Console, or a plugin system. The tool is too small to benefit.
 
@@ -481,7 +481,7 @@ Tests:
 9. Report a concise primary message to stderr and preserve the original and
    cleanup exceptions in one aggregate diagnostic.
 10. Do not catch fatal runtime failures such as stack overflow or out-of-memory
-   conditions.
+    conditions.
 11. Flush output after each complete read batch.
 
 **Acceptance criteria**
@@ -502,27 +502,27 @@ This is a required development/reference task, not a CI dependency.
 2. Import `UDK.com` and `UDK.exe` plus PDBs into Ghidra with the available
    Ghidra-MCP integration.
 3. Use the PDB symbols to trace:
-   - target startup;
-   - argument construction and quoting;
-   - suspended/startup ordering, if any;
-   - pipe name and security mode;
-   - pipe byte/message mode and buffers;
-   - UTF-16 handling;
-   - event creation and signaling;
-   - close-event reset mode and target close ordering;
-   - output loop and close detection;
-   - color-control marker mapping;
-   - target exit/exit-code handling;
-   - process-tree and Ctrl+C behavior.
+    - target startup;
+    - argument construction and quoting;
+    - suspended/startup ordering, if any;
+    - pipe name and security mode;
+    - pipe byte/message mode and buffers;
+    - UTF-16 handling;
+    - event creation and signaling;
+    - close-event reset mode and target close ordering;
+    - output loop and close detection;
+    - color-control marker mapping;
+    - target exit/exit-code handling;
+    - process-tree and Ctrl+C behavior.
 4. Produce a parity matrix with columns for UDK.com behavior, current wrapper
    behavior, proposed wrapper behavior, observable test, and reason for an
    intentional difference.
 5. Intentionally differ where the standalone wrapper is safer:
-   - asynchronous I/O instead of polling;
-   - suspended startup for the known PID;
-   - Job Object cleanup;
-   - explicit two-stage Ctrl+C;
-   - strict two-signal completion.
+    - asynchronous I/O instead of polling;
+    - suspended startup for the known PID;
+    - Job Object cleanup;
+    - explicit two-stage Ctrl+C;
+    - strict two-signal completion.
 6. Mirror UDK.com behavior for externally visible protocol details unless the
    trace proves a defect or the new wrapper explicitly documents the safer
    alternative.
@@ -632,21 +632,34 @@ protocol. The project remains a synthetic test fixture named
 3. open `ComWrapperShutdown` for cooperative server-shutdown tests;
 4. write its exact argument array to a test-controlled file;
 5. recognize `make` as its normal E2E command and emit UDK-like UTF-16LE log
-   records for command parsing, script compilation, progress, success, and final
-   elapsed time, plus at least one `Info:`, `Warning:`, and `Error:` record;
-6. simulate compilation for one randomly selected total delay between 200 and
+   records for command parsing, engine initialization, script compilation,
+   progress, success/failure, and final elapsed time. In normal mode without
+   `-log`, begin with concise commandlet output such as
+   `Log: Executing Class UnrealEd.MakeCommandlet`, followed by headings,
+   compiler diagnostics, summaries, and timing. Do not emit `Init:` startup
+   records in this mode. Include at least one `Warning:` and `Error:` record in
+   the dedicated severity-coverage scenario. Lowercase `info:`, `success:`, and
+   `error:` messages are producer-side `build.ps1` output and are not emitted by
+   FakeUDK;
+6. support an explicit `-log` mode that reproduces the observed UE3 routing
+   change: emit `Init:` and early `Log:` startup records to the inherited pipe,
+   then disconnect the dual-mode output device and discard later simulated
+   compiler output. The fixture does not need to create `Launch.log`; only the
+   text delivered through the wrapper to the terminal is in scope. Keep normal
+   `make` without `-log` on the pipe for compilation-rich commandlet output;
+7. simulate compilation for one randomly selected total delay between 200 and
    1000 milliseconds. Allocate the delay across several visible synthetic work
    stages and report the selected duration in the controlled result metadata;
-7. emit binary color records in deliberately split byte writes, including
+8. emit binary color records in deliberately split byte writes, including
    `1111` and `11111111`. Use distinct representative foreground colors for
-   normal/info, warning, and error output, and emit `Reset` after each colored
+   normal/log, warning, and error output, and emit `Reset` after each colored
    record or record group. Treat exact category-to-color constants as a
    development-time parity check rather than inventing new wire syntax;
-8. close the pipe before remaining alive when the corresponding scenario
+9. close the pipe before remaining alive when the corresponding scenario
    requests it;
-9. exit with a selected code;
-10. block indefinitely when requested;
-11. start a tracked descendant for process-tree tests.
+10. exit with a selected code;
+11. block indefinitely when requested;
+12. start a tracked descendant for process-tree tests.
 
 Keep low-level fault controls separate from normal `make` behavior. Tests may
 select exit-before-connect, close-before-exit, blocked-child, and descendant
@@ -656,17 +669,18 @@ none of those controls may alter wrapper CLI parsing.
 The existing UDK.com/Ghidra evidence already defines the marker, UTF-16LE
 encoding, binary RGBI payload format, and reset record, so a new debugger session
 is not required merely to implement representative log colors. Before claiming
-exact parity for FakeUDK's info/warning/error colors, perform a narrow PDB-backed
-trace of the UDK log call sites that emit color records and document the exact
-payload chosen for each severity. X64dbg is optional; static PDB-backed Ghidra
-analysis is sufficient if the symbols resolve those call sites.
+exact parity for FakeUDK's normal/warning/error colors, perform a narrow
+PDB-backed trace of the UDK log call sites that emit color records and document
+the exact payload chosen for each severity. X64dbg is optional; static
+PDB-backed Ghidra analysis is sufficient if the symbols resolve those call
+sites.
 
 Required scenarios:
 
 1. Invoke `FakeUDK.exe` with `make`, verify exact argument forwarding and
-   realistic split UTF-16LE info, warning, and error output with distinct valid
-   color records, observe delayed exit after pipe EOF, and propagate exit
-   code `7`.
+   realistic split UTF-16LE output with distinct valid normal, warning, and
+   error color records, observe delayed exit after pipe EOF, and propagate
+   exit code `7`.
 2. Exit `0` without a pipe connection: wrapper reports a protocol error.
 3. Nonzero exit without a pipe connection: child code is propagated.
 4. First/second Ctrl+C semantics.
@@ -681,9 +695,41 @@ Required scenarios:
     between 200 and 1000 milliseconds while the wrapper remains attached and
     drains all output. Assert the selected fixture value, not the wall-clock
     duration, so scheduler overhead does not make CI flaky.
-12. Assert that FakeUDK emits at least one info, warning, and error record, and
-    that each is preceded by a valid non-reset binary RGBI color record and
-    followed by `Reset`.
+12. Assert that the normal no-`-log` path emits concise `Log:`/heading output
+    plus dedicated `Warning:` and `Error:` records, each with a valid non-reset
+    binary RGBI color record and `Reset` around the colored record or record
+    group. Do not assert `Init:` records on that path.
+13. Exercise a realistic failed-compile path without `-log`: multiple
+    UnrealScript diagnostic lines, a
+    `Warning/Error Summary`, `Log: Compile aborted due to errors.`, and
+    `Log: Failure - N error(s), M warning(s)`, followed by commandlet elapsed
+    time and shutdown records.
+14. Run `make -log` and verify that the wrapper faithfully preserves the
+    target-selected terminal output: startup records cross the pipe, later
+    compiler records are deliberately absent from terminal output, and the
+    wrapper propagates the target exit code while continuing to wait for process
+    exit.
+
+### FakeUDK end-to-end scenario matrix
+
+| Scenario                                   | FakeUDK input/state                                    | Expected terminal output                                                                                                                                      | Expected wrapper/cleanup result                                                                    |
+|--------------------------------------------|--------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------|
+| Successful commandlet `make`               | `make`; no `-log`; random synthetic delay              | `Log: Executing Class UnrealEd.MakeCommandlet`, package headings, `Scripts successfully compiled...`, `Success - 0 error(s), N warning(s)`, and elapsed time  | Forward all UTF-16LE text, consume color controls, wait through pipe EOF if configured, return `0` |
+| Failed commandlet `make`                   | `make`; synthetic compile failure                      | Package headings, `Error:` compiler diagnostics, `Warning:` records, `Compile aborted due to errors.`, warning/error summary, failure total, and elapsed time | Forward all records, consume color controls, return configured nonzero target code                 |
+| Exact argument forwarding with delayed EOF | Target argument array plus exit code `7`               | Exact commandlet records emitted in split writes; no wrapper-added or missing tokens                                                                          | Preserve exact argument file, continue after pipe EOF until exit, return `7`                       |
+| Severity/color coverage                    | Normal/log, warning, and error records                 | Text for each severity plus no visible `` `~[~` ``/`Reset` marker text                                                                                        | Apply distinct valid RGBI attributes, reset after each record/group, leave terminal color restored |
+| `-log` routing                             | `make -log`                                            | `Init:` and early `Log:` startup records only; later compiler diagnostics and summaries absent                                                                | Wait for normal process exit, propagate its code, do not inspect or merge a log file               |
+| Exit `0` before connection                 | Skip pipe connection and exit `0`                      | No target output                                                                                                                                              | Report protocol error and return wrapper runtime code `1`                                          |
+| Nonzero exit before connection             | Skip pipe connection and exit configured nonzero code  | No target output                                                                                                                                              | Propagate the exact target code                                                                    |
+| First Ctrl+C                               | First signal while FakeUDK is active                   | One `Exiting... Press Ctrl+C again to force exit.` message; target may emit cooperative shutdown/output records                                               | Keep draining, leave child alive during graceful phase, eventually return cancellation code `130`  |
+| Second Ctrl+C                              | Second/later signal or forced path                     | One `Forcing exit...`; output may end mid-record                                                                                                              | Terminate the Job Object idempotently, no surviving child/descendant, return `130`                 |
+| Cooperative server shutdown                | FakeUDK opens `ComWrapperShutdown`                     | Final shutdown text and EOF after event signal                                                                                                                | Continue draining; return normal/cancellation result according to completed state                  |
+| Cancel while connecting                    | Delay or omit pipe connect                             | No ordinary compile output                                                                                                                                    | Terminate target cleanly; no orphan                                                                |
+| Cancel while forwarding                    | Stream deliberately split records during cancellation  | Complete received batches only; no marker/control text                                                                                                        | Terminate target tree and restore color; return `130`                                              |
+| Descendant cleanup                         | FakeUDK starts tracked child                           | Optional startup text from parent                                                                                                                             | Job Object termination removes parent and descendant                                               |
+| Abrupt wrapper termination                 | Wrapper process is externally terminated mid-stream    | Output can stop mid-record                                                                                                                                    | `KILL_ON_JOB_CLOSE` removes FakeUDK and descendants                                                |
+| Output sink failure                        | Emit colored record, then inject wrapper write failure | Colored record may fail to render completely                                                                                                                  | Restore color, stop target, report wrapper runtime failure                                         |
+| Random timing                              | `make` selects a delay in `[200, 1000]` ms             | Same deterministic staged text regardless of selected delay                                                                                                   | Assert the fixture metadata delay is in range, not wall-clock duration                             |
 
 E2E policy:
 
@@ -708,8 +754,15 @@ replace it with a deterministic lower-level test.
 - No synthetic child or descendant remains after a successful or failed test.
 - `FakeUDK.exe` exercises `make` through the same pipe, event, UTF-16LE, color,
   and lifecycle behavior as a UE3 target.
-- FakeUDK's normal `make` run covers distinct info, warning, and error log
-  colors and resets the console after each colored record or record group.
+- FakeUDK's severity-coverage `make` run covers distinct normal, warning, and
+  error log colors and resets the console after each colored record or record
+  group.
+- FakeUDK covers both commandlet-rich output without `-log` and UE3-style
+  terminal routing with `-log`: only startup records are forwarded after which
+  later simulated compiler output is absent from the terminal.
+- FakeUDK does not invent lowercase `info:`, `success:`, or `error:` categories.
+  If future consumer-level E2E tests execute a build script, those messages
+  remain assertions for the consumer, not for the UE3 target protocol.
 - The `TESTING.md` document clearly separates synthetic CI tests from manual
   real-editor validation.
 
@@ -800,32 +853,32 @@ not justify a Linux runner.
 The primary job's detailed steps are:
 
 1. `quality-and-unit` work:
-   - checkout full history;
-   - install the exact SDK from `global.json`;
-   - restore with locked dependencies;
-   - format verification;
-   - analyzer/warnings-as-errors Release build;
-   - PSScriptAnalyzer over `scripts/ci`;
-   - all unit tests with the Release configuration and `--no-build`;
-   - package vulnerability audit.
+    - checkout full history;
+    - install the exact SDK from `global.json`;
+    - restore with locked dependencies;
+    - format verification;
+    - analyzer/warnings-as-errors Release build;
+    - PSScriptAnalyzer over `scripts/ci`;
+    - all unit tests with the Release configuration and `--no-build`;
+    - package vulnerability audit.
 2. `integration-and-publish` work:
-   - use the Release output for the wrapper and `FakeUDK.exe`;
-   - run synthetic Windows integration tests;
-   - collect coverage;
-   - verify no FakeUDK process remains;
-   - publish a `win-x64` smoke-test artifact.
+    - use the Release output for the wrapper and `FakeUDK.exe`;
+    - run synthetic Windows integration tests;
+    - collect coverage;
+    - verify no FakeUDK process remains;
+    - publish a `win-x64` smoke-test artifact.
 
 Log retention:
 
 - Create `artifacts/logs` at job start.
 - Keep CI orchestration in small, checked-in PowerShell 7 helpers under
   `scripts/ci/` where that reduces YAML duplication. Use helpers for:
-  - running a command while preserving its output and exit code;
-  - writing command output to durable log files;
-  - generating or merging coverage commands;
-  - staging artifacts;
-  - generating checksum files;
-  - collecting the environment values used by the metadata manifest.
+    - running a command while preserving its output and exit code;
+    - writing command output to durable log files;
+    - generating or merging coverage commands;
+    - staging artifacts;
+    - generating checksum files;
+    - collecting the environment values used by the metadata manifest.
 - Give helpers `Set-StrictMode -Version Latest` and
   `$ErrorActionPreference = 'Stop'`. Do not hide a child process exit code.
 - Keep the helper names generic; do not add an AircraftMod-style `build.ps1`.
@@ -899,10 +952,10 @@ Use the modern Microsoft Testing Platform path:
    current MTP convention uses the runner's `--coverage` and
    `--coverage-output-format cobertura` options after the test-runner separator.
 4. Use ReportGenerator (not a Python badge generator) to produce:
-   - HTML coverage report;
-   - Cobertura XML;
-   - JSON/text summary;
-   - SVG `Badges`.
+    - HTML coverage report;
+    - Cobertura XML;
+    - JSON/text summary;
+    - SVG `Badges`.
 5. Upload raw coverage and generated reports as CI artifacts on success or
    failure.
 6. Combine Windows unit and integration coverage into one report if the collector
@@ -992,19 +1045,19 @@ profile is the intended release/debugging combination.
    the matching PDBs. The runtime package stays small and clean; developers and
    crash investigators can opt into the symbols archive.
 8. Include these release assets:
-   - product ZIP without PDBs;
-   - `-symbols-win-x64.zip` containing portable PDBs;
-   - SHA-256 checksum file;
-   - `build-metadata.json`;
-   - `LICENSE`;
-   - `README.md`;
-   - `THIRD_PARTY_NOTICES`;
-   - tagged source/archive link.
+    - product ZIP without PDBs;
+    - `-symbols-win-x64.zip` containing portable PDBs;
+    - SHA-256 checksum file;
+    - `build-metadata.json`;
+    - `LICENSE`;
+    - `README.md`;
+    - `THIRD_PARTY_NOTICES`;
+    - tagged source/archive link.
 9. Verify the PDB-to-binary association from the final publish output. Record and
    checksum each PDB with its matching executable/DLL, and retain Source Link
    metadata.
 10. Generate release notes from merged pull requests with GitHub CLI, or use the
-   GitHub release-notes API.
+    GitHub release-notes API.
 11. Mark prerelease tags as prereleases.
 12. Fail if the release or any expected asset already exists; do not overwrite an
     immutable release silently.

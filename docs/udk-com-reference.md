@@ -84,15 +84,15 @@ The target then assigns the pipe handle to `STD_OUTPUT_HANDLE` with
 
 Observed `UDK.com` server settings:
 
-| Property | UDK.com value |
-| --- | --- |
-| Direction | inbound |
-| Mode | byte stream |
-| Maximum instances | 1 |
-| Input buffer | 1024 bytes |
-| Output buffer | 1024 bytes |
-| Default timeout | 1000 milliseconds |
-| Security attributes | default |
+| Property            | UDK.com value     |
+|---------------------|-------------------|
+| Direction           | inbound           |
+| Mode                | byte stream       |
+| Maximum instances   | 1                 |
+| Input buffer        | 1024 bytes        |
+| Output buffer       | 1024 bytes        |
+| Default timeout     | 1000 milliseconds |
+| Security attributes | default           |
 
 The modern wrapper must preserve the endpoint name, byte-stream semantics, and
 one-server assumption. Buffer sizing does not change interoperability, but the
@@ -202,33 +202,68 @@ record is:
 `UDK.com` compares the marker and `Reset` case-insensitively for a record that
 begins at a read-buffer boundary.
 
+In a `make -log` terminal run, the visible startup records use categories such
+as `Init:` and `Log:`. The later clean-run package headings and completion text
+such as `Log: Success - 0 error(s), 0 warning(s)`, and failed-run `Error:`
+records ending with `Log: Compile aborted due to errors.`,
+`Log: Warning/Error Summary`, and
+`Log: Failure - N error(s), M warning(s)`, are in `Launch.log`, not in the
+wrapper's terminal output. These text records do not contain the marker because
+`UDK.com` consumes color-control records before printing ordinary output.
+
+The concise non-`-log` commandlet path differs: observed VNEditor output begins
+with `Log: Executing Class UnrealEd.MakeCommandlet`, followed by package headings,
+compiler diagnostics, summaries, and elapsed time. It does not show the
+engine-wide `Init:` startup sequence. Lowercase `info:`, `success:`, and `error:`
+messages seen in the older build workflow are emitted by `build.ps1`, not by
+`UDK.exe`, `VNEditor.exe`, or the wrapper.
+
+The `-log` argument also changes target output routing. In observed real UDK and
+VNEditor runs, the inherited dual-mode pipe carried startup records, then the
+target disconnected from that inherited console path. Later compilation and
+commandlet records were written to `Launch.log` instead of the pipe. The wrapper
+continued waiting for the target and propagated its exit code. Running the same
+target without `-log` kept commandlet/compiler records on the inherited
+dual-mode pipe, which produced the concise build-oriented output seen in the
+older wrapper.
+
+This difference is UE3 target behavior, not a wrapper quoting or pipe-decoding
+difference. The original `UDK.com` wrapper exhibits the same visible distinction.
+`-FORCELOGFLUSH` affects log flushing; it does not restore compiler output to the
+dual-mode pipe.
+
+The generic wrapper must not automatically discover or merge a target's log
+file. A future "pipe plus log tee" mode would need explicit configuration for
+the log path, rotation/backup behavior, de-duplication, and target startup
+ordering.
+
 For a non-reset record, UDK.com reads the first eight payload code units as
 binary component digits. Each digit must be `0` or `1`. The digit positions map
 to Windows console color attributes as follows:
 
-| Position | Component | Console attribute |
-| --- | --- | --- |
-| 0 | foreground red | `0x0004` |
-| 1 | foreground green | `0x0002` |
-| 2 | foreground blue | `0x0001` |
-| 3 | foreground intensity | `0x0008` |
-| 4 | background red | `0x0040` |
-| 5 | background green | `0x0020` |
-| 6 | background blue | `0x0010` |
-| 7 | background intensity | `0x0080` |
+| Position | Component            | Console attribute |
+|----------|----------------------|-------------------|
+| 0        | foreground red       | `0x0004`          |
+| 1        | foreground green     | `0x0002`          |
+| 2        | foreground blue      | `0x0001`          |
+| 3        | foreground intensity | `0x0008`          |
+| 4        | background red       | `0x0040`          |
+| 5        | background green     | `0x0020`          |
+| 6        | background blue      | `0x0010`          |
+| 7        | background intensity | `0x0080`          |
 
 Payloads shorter than eight digits represent missing positions as zero. For
 example:
 
-| Payload | Windows attributes | Meaning |
-| --- | --- | --- |
-| `0000` | `0x0000` | foreground black |
-| `0001` | `0x0008` | bright/intense black |
-| `0010` | `0x0001` | foreground blue |
-| `0100` | `0x0002` | foreground green |
-| `1000` | `0x0004` | foreground dark red |
-| `1111` | `0x000f` | foreground white |
-| `11111111` | `0x00ff` | all foreground and background attributes |
+| Payload    | Windows attributes | Meaning                                  |
+|------------|--------------------|------------------------------------------|
+| `0000`     | `0x0000`           | foreground black                         |
+| `0001`     | `0x0008`           | bright/intense black                     |
+| `0010`     | `0x0001`           | foreground blue                          |
+| `0100`     | `0x0002`           | foreground green                         |
+| `1000`     | `0x0004`           | foreground dark red                      |
+| `1111`     | `0x000f`           | foreground white                         |
+| `11111111` | `0x00ff`           | all foreground and background attributes |
 
 This is a binary attribute record, not a four-digit hexadecimal palette index.
 Implementations must not parse `1111` as hexadecimal value `0x1111`.
@@ -298,25 +333,25 @@ requirements:
 
 ## Baseline conformance matrix
 
-| Behavior | Baseline | Current wrapper | Required action |
-| --- | --- | --- | --- |
-| Suspended target startup | Required | Matches | Preserve |
-| PID pipe name | `\\.\pipe\<PID>cout` | Matches | Preserve |
-| Pre-resume pipe creation | Required | Matches | Preserve |
-| Byte-mode, one-instance pipe | Required | Matches | Preserve |
-| PID close event | Required | Matches creation | Preserve and verify target close ordering |
-| `ComWrapperShutdown` event | Used for servers | Missing | Add for server-compatible graceful shutdown |
-| UTF-16LE stream | Required | Uses `Encoding.Unicode` | Preserve; make decoder strict |
-| Split UTF-16 units/markers | UDK.com is weak | Marker decoder is boundary-aware | Preserve and test every split point |
-| Binary RGBI color payload | Required | Treated as hexadecimal | Fix and test |
-| `Reset` color record | Required | Matches | Preserve |
-| Wait for output drain and process exit | Required | Matches | Preserve |
-| Target exit code | Propagated | Matches | Preserve |
-| Zero exit without pipe | UDK.com can hang | Wrapper reports protocol error | Intentional robust difference |
-| Ctrl+C | Immediate termination | Planned two-stage shutdown | Intentional documented difference |
-| Job Object/process tree cleanup | Absent | Planned | Required hardening |
-| Current-user pipe access | Default access in UDK.com | More restrictive | Intentional hardening |
-| Working directory | Inherited from launcher | Defaults to executable directory | Documented wrapper behavior |
+| Behavior                               | Baseline                  | Current wrapper                  | Required action                             |
+|----------------------------------------|---------------------------|----------------------------------|---------------------------------------------|
+| Suspended target startup               | Required                  | Matches                          | Preserve                                    |
+| PID pipe name                          | `\\.\pipe\<PID>cout`      | Matches                          | Preserve                                    |
+| Pre-resume pipe creation               | Required                  | Matches                          | Preserve                                    |
+| Byte-mode, one-instance pipe           | Required                  | Matches                          | Preserve                                    |
+| PID close event                        | Required                  | Matches creation                 | Preserve and verify target close ordering   |
+| `ComWrapperShutdown` event             | Used for servers          | Missing                          | Add for server-compatible graceful shutdown |
+| UTF-16LE stream                        | Required                  | Uses `Encoding.Unicode`          | Preserve; make decoder strict               |
+| Split UTF-16 units/markers             | UDK.com is weak           | Marker decoder is boundary-aware | Preserve and test every split point         |
+| Binary RGBI color payload              | Required                  | Treated as hexadecimal           | Fix and test                                |
+| `Reset` color record                   | Required                  | Matches                          | Preserve                                    |
+| Wait for output drain and process exit | Required                  | Matches                          | Preserve                                    |
+| Target exit code                       | Propagated                | Matches                          | Preserve                                    |
+| Zero exit without pipe                 | UDK.com can hang          | Wrapper reports protocol error   | Intentional robust difference               |
+| Ctrl+C                                 | Immediate termination     | Planned two-stage shutdown       | Intentional documented difference           |
+| Job Object/process tree cleanup        | Absent                    | Planned                          | Required hardening                          |
+| Current-user pipe access               | Default access in UDK.com | More restrictive                 | Intentional hardening                       |
+| Working directory                      | Inherited from launcher   | Defaults to executable directory | Documented wrapper behavior                 |
 
 ## Regression-test requirements
 
@@ -351,25 +386,25 @@ The following functions anchor the baseline for future revalidation:
 
 ### `UDK.com`
 
-| Address | Role |
-| --- | --- |
-| `00401000` | Console control handler |
-| `00401060` | Creates the pipe, PID event, and `ComWrapperShutdown` event |
-| `00401140` | Closes handles and resets console attributes |
-| `00401440` | Connects, reads, decodes, and forwards output |
-| `00401780` | Starts the output-reader thread |
+| Address    | Role                                                                                            |
+|------------|-------------------------------------------------------------------------------------------------|
+| `00401000` | Console control handler                                                                         |
+| `00401060` | Creates the pipe, PID event, and `ComWrapperShutdown` event                                     |
+| `00401140` | Closes handles and resets console attributes                                                    |
+| `00401440` | Connects, reads, decodes, and forwards output                                                   |
+| `00401780` | Starts the output-reader thread                                                                 |
 | `004017a0` | Builds target command line, creates suspended process, resumes it, waits, and returns exit code |
 
 ### `UDK.exe`
 
 PDB-assisted names and addresses used in the current build:
 
-| Address | Symbol | Role |
-| --- | --- | --- |
-| `1400ea980` | `FOutputDeviceConsoleWindowsInherited::Connect` | Opens PID pipe and redirects stdout |
-| `1400eaa40` | `FOutputDeviceConsoleWindowsInherited::DisconnectInherited` | Signals PID event and closes pipe |
-| `1400efb00` | `FOutputDeviceConsoleWindowsInherited::Serialize` | Writes UTF-16LE text and color records |
-| `14039e6f0` | `UServerCommandlet::Main` | Polls `ComWrapperShutdown` |
+| Address     | Symbol                                                      | Role                                   |
+|-------------|-------------------------------------------------------------|----------------------------------------|
+| `1400ea980` | `FOutputDeviceConsoleWindowsInherited::Connect`             | Opens PID pipe and redirects stdout    |
+| `1400eaa40` | `FOutputDeviceConsoleWindowsInherited::DisconnectInherited` | Signals PID event and closes pipe      |
+| `1400efb00` | `FOutputDeviceConsoleWindowsInherited::Serialize`           | Writes UTF-16LE text and color records |
+| `14039e6f0` | `UServerCommandlet::Main`                                   | Polls `ComWrapperShutdown`             |
 
 Function names without PDB symbols and decompiler-generated type names are
 evidence aids, not source-level API guarantees. Addresses are specific to this
