@@ -23,6 +23,14 @@ public sealed class DualModeProtocolIntegrationTests
     }
 
     [Fact(Timeout = 30_000)]
+    public void FakeUDKFallsBackToConsoleWhenPipeIsAbsent()
+    {
+        // TODO: Run FakeUDK directly and verify default compilation uses console output.
+        _ = TestContext.Current.CancellationToken;
+        Assert.Fail("TODO: Verify FakeUDK standalone console fallback.");
+    }
+
+    [Fact(Timeout = 30_000)]
     public void SupportsTwoStageConsoleInterruption()
     {
         // TODO: Exercise cooperative ComWrapperShutdown and forced Job Object cleanup.

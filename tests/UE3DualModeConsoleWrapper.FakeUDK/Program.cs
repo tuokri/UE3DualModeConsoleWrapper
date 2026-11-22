@@ -103,6 +103,26 @@ internal static class FakeUDK
         byteOrderMark: false,
         throwOnInvalidBytes: true);
 
+    private static readonly ConsoleColor[] ColorPalette =
+    [
+        ConsoleColor.Black,
+        ConsoleColor.Black,
+        ConsoleColor.DarkBlue,
+        ConsoleColor.Blue,
+        ConsoleColor.DarkGreen,
+        ConsoleColor.Green,
+        ConsoleColor.DarkCyan,
+        ConsoleColor.Cyan,
+        ConsoleColor.DarkRed,
+        ConsoleColor.Red,
+        ConsoleColor.DarkMagenta,
+        ConsoleColor.Magenta,
+        ConsoleColor.DarkYellow,
+        ConsoleColor.Yellow,
+        ConsoleColor.Gray,
+        ConsoleColor.White
+    ];
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true
@@ -168,31 +188,59 @@ internal static class FakeUDK
                 PipeOptions.Asynchronous);
             metadata.State = "connecting-pipe";
             WriteMetadata(options.MetadataPath, metadata);
-            await pipe.ConnectAsync(cancellationToken);
-            metadata.PipeConnected = true;
+            try
+            {
+                await pipe.ConnectAsync(0, cancellationToken);
+                metadata.PipeConnected = true;
+                closeEvent = EventWaitHandle.OpenExisting(
+                    "dualmode_die_event" + Environment.ProcessId);
+                shutdownEvent = EventWaitHandle.OpenExisting("ComWrapperShutdown");
+                metadata.EventsOpened = true;
+            }
+            catch (TimeoutException)
+            {
+                await pipe.DisposeAsync();
+                pipe = null;
+                metadata.UsedConsoleFallback = true;
+                metadata.State = "console-fallback";
+            }
+            catch (IOException)
+            {
+                await pipe.DisposeAsync();
+                pipe = null;
+                metadata.UsedConsoleFallback = true;
+                metadata.State = "console-fallback";
+            }
 
-            closeEvent = EventWaitHandle.OpenExisting(
-                "dualmode_die_event" + Environment.ProcessId);
-            shutdownEvent = EventWaitHandle.OpenExisting("ComWrapperShutdown");
-            metadata.EventsOpened = true;
             WriteMetadata(options.MetadataPath, metadata);
 
             if (options.Block)
             {
                 metadata.State = "blocking-after-connect";
                 WriteMetadata(options.MetadataPath, metadata);
-                await WaitForShutdownAsync(shutdownEvent).ConfigureAwait(false);
-                metadata.ShutdownRequested = true;
-                metadata.State = "shutdown-requested";
-                WriteMetadata(options.MetadataPath, metadata);
-                await WriteRecordAsync(
-                        pipe,
-                        "Log: Cooperative shutdown requested\r\n")
-                    .ConfigureAwait(false);
+                if (shutdownEvent is null)
+                {
+                    await Task
+                        .Delay(Timeout.InfiniteTimeSpan, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    await WaitForShutdownAsync(shutdownEvent).ConfigureAwait(false);
+                    metadata.ShutdownRequested = true;
+                    metadata.State = "shutdown-requested";
+                    WriteMetadata(options.MetadataPath, metadata);
+                    await WriteRecordAsync(
+                            pipe,
+                            "Log: Cooperative shutdown requested\r\n")
+                        .ConfigureAwait(false);
+                }
             }
             else
             {
-                var shutdownTask = WaitForShutdownAsync(shutdownEvent);
+                var shutdownTask = shutdownEvent is null
+                    ? Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken)
+                    : WaitForShutdownAsync(shutdownEvent);
                 var compilationOutput = EmitCompilationAsync(
                     pipe,
                     options,
@@ -207,11 +255,14 @@ internal static class FakeUDK
             if (options.ClosePipeBeforeExit)
             {
                 metadata.State = "closing-pipe";
-                metadata.PipeClosed = true;
+                metadata.PipeClosed = pipe is not null;
                 WriteMetadata(options.MetadataPath, metadata);
-                closeEvent.Set();
-                await pipe.DisposeAsync();
-                pipe = null;
+                if (pipe is not null)
+                {
+                    closeEvent?.Set();
+                    await pipe.DisposeAsync();
+                    pipe = null;
+                }
 
                 if (options.DelayAfterCloseMilliseconds > 0)
                 {
@@ -248,7 +299,7 @@ internal static class FakeUDK
     }
 
     private static async Task EmitCompilationAsync(
-        NamedPipeClientStream pipe,
+        NamedPipeClientStream? pipe,
         FakeUDKOptions options,
         FakeUDKMetadata metadata,
         Task shutdownTask,
@@ -373,8 +424,8 @@ internal static class FakeUDK
         var stages = new List<FakeCompilationStage>
         {
             new("heading-core", "--------------------Core - Release--------------------\r\n"),
-            new("analyzing", "Analyzing...\r\n"),
             new("heading-game", "--------------------FakeGame - Release--------------------\r\n"),
+            new("analyzing", "Analyzing...\r\n"),
             new("compiling", "Log: Compiling synthetic scripts\r\n")
         };
 
@@ -393,7 +444,7 @@ internal static class FakeUDK
     }
 
     private static async Task WriteSeverityRecordAsync(
-        NamedPipeClientStream pipe,
+        NamedPipeClientStream? pipe,
         string binaryColor,
         string text)
     {
@@ -403,9 +454,36 @@ internal static class FakeUDK
     }
 
     private static async Task WriteControlRecordAsync(
-        NamedPipeClientStream pipe,
+        NamedPipeClientStream? pipe,
         string command)
     {
+        if (pipe is null)
+        {
+            if (Console.IsOutputRedirected)
+            {
+                return;
+            }
+
+            if (command.Equals(ResetCommand, StringComparison.OrdinalIgnoreCase))
+            {
+                Console.ResetColor();
+                return;
+            }
+
+            var paletteIndex = 0;
+            foreach (var component in command.AsSpan(0, Math.Min(4, command.Length)))
+            {
+                paletteIndex <<= 1;
+                if (component == '1')
+                {
+                    paletteIndex |= 1;
+                }
+            }
+
+            Console.ForegroundColor = ColorPalette[paletteIndex];
+            return;
+        }
+
         var bytes = OutputEncoding.GetBytes(ColorMarker + command + "\r\n");
         var splitPoints = new[]
         {
@@ -428,9 +506,16 @@ internal static class FakeUDK
     }
 
     private static async Task WriteRecordAsync(
-        NamedPipeClientStream pipe,
+        NamedPipeClientStream? pipe,
         string text)
     {
+        if (pipe is null)
+        {
+            await Console.Out.WriteAsync(text).ConfigureAwait(false);
+            await Console.Out.FlushAsync().ConfigureAwait(false);
+            return;
+        }
+
         var bytes = OutputEncoding.GetBytes(text);
         if (bytes.Length > 3)
         {
@@ -515,6 +600,8 @@ internal static class FakeUDK
         public bool PipeConnected { get; set; }
 
         public bool PipeClosed { get; set; }
+
+        public bool UsedConsoleFallback { get; set; }
 
         public bool EventsOpened { get; set; }
 

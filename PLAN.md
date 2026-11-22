@@ -692,19 +692,23 @@ protocol. The project remains a synthetic test fixture named
    compiler output. The fixture does not need to create `Launch.log`; only the
    text delivered through the wrapper to the terminal is in scope. Keep normal
    `make` without `-log` on the pipe for compilation-rich commandlet output;
-7. simulate compilation for one randomly selected total delay between 200 and
+7. make one immediate pipe-open attempt. If the wrapper pipe is absent, continue
+   the default scenario on ordinary console output, matching `UDK.exe` fallback
+   behavior. Keep `--fake-no-connect` separate as an explicit fault mode that
+   exits before connection instead of falling back;
+8. simulate compilation for one randomly selected total delay between 200 and
    1000 milliseconds. Allocate the delay across several visible synthetic work
    stages and report the selected duration in the controlled result metadata;
-8. emit four-digit binary color records in deliberately split byte writes,
+9. emit four-digit binary color records in deliberately split byte writes,
    including `1000`, `1101`, and `1111`. Use distinct representative foreground colors for
    normal/log, warning, and error output, and emit `Reset` after each colored
    record or record group. Treat exact category-to-color constants as a
    development-time parity check rather than inventing new wire syntax;
-9. close the pipe before remaining alive when the corresponding scenario
+10. close the pipe before remaining alive when the corresponding scenario
    requests it;
-10. exit with a selected code;
-11. block indefinitely when requested;
-12. start a tracked descendant for process-tree tests.
+11. exit with a selected code;
+12. block indefinitely when requested;
+13. start a tracked descendant for process-tree tests.
 
 Keep low-level fault controls separate from normal `make` behavior. Tests may
 select exit-before-connect, close-before-exit, blocked-child, and descendant
@@ -729,30 +733,33 @@ Required scenarios:
    exit code `7`.
 2. Exit `0` without a pipe connection: wrapper reports a protocol error.
 3. Nonzero exit without a pipe connection: child code is propagated.
-4. First/second Ctrl+C semantics.
-5. Cooperative server shutdown through `ComWrapperShutdown`, with continued
+4. Run FakeUDK directly without a pipe host: one immediate connect attempt
+   fails, FakeUDK falls back to ordinary console output, completes its default
+   scenario, and records `UsedConsoleFallback = true`.
+5. First/second Ctrl+C semantics.
+6. Cooperative server shutdown through `ComWrapperShutdown`, with continued
    output draining.
-6. Cancellation while waiting for a connection.
-7. Cancellation while forwarding output.
-8. Descendant termination through the Job Object.
-9. Abrupt termination of the wrapper followed by child/descendant termination.
-10. Color reset after an injected output failure.
-11. The random `make` workload selects and reports a total synthetic delay
+7. Cancellation while waiting for a connection.
+8. Cancellation while forwarding output.
+9. Descendant termination through the Job Object.
+10. Abrupt termination of the wrapper followed by child/descendant termination.
+11. Color reset after an injected output failure.
+12. The random `make` workload selects and reports a total synthetic delay
     between 200 and 1000 milliseconds while the wrapper remains attached and
     drains all output. Assert the selected fixture value, not the wall-clock
     duration, so scheduler overhead does not make CI flaky.
-12. Assert that the normal no-`-log` path emits the selected compact or
+13. Assert that the normal no-`-log` path emits the selected compact or
     startup-prefix profile, plus concise `Log:`/heading output
     plus dedicated `Warning:` and `Error:` records, each with a valid non-reset
     four-digit palette color record and `Reset` around the colored record or record
     group. Select the compact profile for this assertion and separately cover
     the startup-prefix profile to model UDK 2015.
-13. Exercise a realistic failed-compile path without `-log`: multiple
+14. Exercise a realistic failed-compile path without `-log`: multiple
     UnrealScript diagnostic lines, a
     `Warning/Error Summary`, `Log: Compile aborted due to errors.`, and
     `Log: Failure - N error(s), M warning(s)`, followed by commandlet elapsed
     time and shutdown records.
-14. Run `make -log` and verify that the wrapper faithfully preserves the
+15. Run `make -log` and verify that the wrapper faithfully preserves the
     target-selected terminal output: startup records cross the pipe, later
     compiler records are deliberately absent from terminal output, and the
     wrapper propagates the target exit code while continuing to wait for process
