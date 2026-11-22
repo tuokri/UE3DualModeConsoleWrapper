@@ -67,7 +67,7 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
     if (!OperatingSystem.IsWindows())
     {
         Console.Error.WriteLine("The UE3 dual-mode console wrapper requires Windows.");
-        return 1;
+        return UE3DualModeConsoleWrapper.ExitCode.RuntimeError;
     }
 
     try
@@ -90,7 +90,7 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
     {
         Console.Error.WriteLine("The operation was cancelled.");
-        return 130;
+        return UE3DualModeConsoleWrapper.ExitCode.Cancelled;
     }
     catch (Exception exception) when (
         exception is ArgumentException
@@ -101,16 +101,26 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
             or Win32Exception)
     {
         Console.Error.WriteLine($"UE3 dual-mode console wrapper failed: {exception.Message}");
-        return 1;
+        return UE3DualModeConsoleWrapper.ExitCode.RuntimeError;
     }
 });
 
 var parseResult = rootCommand.Parse(args);
 var exitCode = await parseResult.InvokeAsync();
-return parseResult.Errors.Count > 0 ? 2 : exitCode;
+return parseResult.Errors.Count > 0
+    ? UE3DualModeConsoleWrapper.ExitCode.UsageError
+    : exitCode;
 
 namespace UE3DualModeConsoleWrapper
 {
+    internal static class ExitCode
+    {
+        public const int Success = 0;
+        public const int RuntimeError = 1;
+        public const int UsageError = 2;
+        public const int Cancelled = 130;
+    }
+
     [SupportedOSPlatform("windows")]
     internal static class DualModeLauncher
     {
@@ -202,7 +212,7 @@ namespace UE3DualModeConsoleWrapper
                     }
 
                     await processExit.ConfigureAwait(false);
-                    if (process.ExitCode == 0)
+                    if (process.ExitCode == ExitCode.Success)
                     {
                         throw new InvalidOperationException(
                             "The target exited without connecting to its dual-mode output pipe.");
@@ -378,7 +388,9 @@ namespace UE3DualModeConsoleWrapper
         {
             if (process is null)
             {
-                if (!NativeMethods.TerminateProcess(nativeProcess.DangerousGetHandle(), exitCode: 1))
+                if (!NativeMethods.TerminateProcess(
+                        nativeProcess.DangerousGetHandle(),
+                        exitCode: ExitCode.RuntimeError))
                 {
                     throw new Win32Exception(
                         Marshal.GetLastWin32Error(),
@@ -404,7 +416,9 @@ namespace UE3DualModeConsoleWrapper
                 {
                     process.Kill(entireProcessTree: true);
                 }
-                else if (!NativeMethods.TerminateProcess(nativeProcess.DangerousGetHandle(), exitCode: 1))
+                else if (!NativeMethods.TerminateProcess(
+                             nativeProcess.DangerousGetHandle(),
+                             exitCode: ExitCode.RuntimeError))
                 {
                     throw new Win32Exception(
                         Marshal.GetLastWin32Error(),
