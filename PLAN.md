@@ -47,8 +47,9 @@ The review identified these existing strengths:
   are appropriate for the required native Windows calls.
 - The wrapper currently forwards UTF-16LE text, recognizes split color-control
   records, waits for both pipe EOF and process exit, and propagates the target's
-  exit code. The UE3 color payload is a binary RGBI console-attribute string,
-  not a hexadecimal palette index.
+  exit code. UDK.com's verified color payload is a four-digit binary value used
+  as a 16-entry foreground `ConsoleColor` palette index, not a hexadecimal
+  value and not an eight-component console-attribute string.
 - `dotnet build -warnaserror` and `dotnet format --verify-no-changes` pass on the
   current branch.
 
@@ -470,10 +471,13 @@ Tests:
    older array-only overload where practical.
 5. Create the UTF-16 decoder explicitly as UTF-16LE with strict fallback so a
    truncated final code unit is reported instead of silently replaced.
-6. Parse color controls as up to eight binary component digits that map to
-   Windows foreground/background RGBI attributes. `1111` maps to foreground
-   white (`0x000f`); it is not an out-of-range hexadecimal value. Parse `Reset`
-   case-insensitively and preserve the original console attributes on reset.
+6. Match the exact UDK.com control parser for the verified 2015 build: parse the
+   first four binary digits as a base-2 palette index and select from its
+   16-entry foreground `ConsoleColor` palette. In that palette `0001` is
+   deliberately `Black`. Do not interpret `1111` as hexadecimal, and do not
+   apply background colors. Support a longer suffix only as ignored extension
+   compatibility unless a target-side trace proves it carries protocol meaning.
+   Preserve `Reset` behavior case-insensitively.
 7. Treat a color control as the entire `marker + payload + CRLF` record. Consume
    the trailing `\r\n` as part of the control record; forwarding it creates
    extra blank lines around colored UE3 output.
@@ -500,12 +504,14 @@ Tests:
 
 This is a required development/reference task, not a CI dependency.
 
-1. Obtain a licensed local copy of the matching `UDK.com` and `UDK.exe` with the
-   available PDBs. Record exact file versions and SHA-256 hashes only in local
-   development notes.
-2. Import `UDK.com` and `UDK.exe` plus PDBs into Ghidra with the available
-   Ghidra-MCP integration.
-3. Use the PDB symbols to trace:
+1. Obtain a licensed local copy of the matching `UDK.com` and `UDK.exe`, plus
+   PDBs where they are available. Record exact file versions and SHA-256 hashes
+   only in local development notes.
+2. Import `UDK.com` and `UDK.exe` plus available PDBs into Ghidra. For a managed
+   `UDK.com`, use a C# decompiler to recover method-level behavior and Ghidra to
+   verify PE/managed metadata; use PDB-assisted Ghidra analysis for the native
+   target.
+3. Trace:
     - target startup;
     - argument construction and quoting;
     - suspended/startup ordering, if any;
@@ -520,7 +526,8 @@ This is a required development/reference task, not a CI dependency.
     - process-tree and Ctrl+C behavior.
 4. Produce a parity matrix with columns for UDK.com behavior, current wrapper
    behavior, proposed wrapper behavior, observable test, and reason for an
-   intentional difference.
+   intentional difference. Keep that matrix in this plan; `docs/udk-com-reference.md`
+   must contain only observed UDK.com/UE3 target behavior.
 5. Intentionally differ where the standalone wrapper is safer:
     - asynchronous I/O instead of polling;
     - suspended startup for the known PID;
@@ -531,19 +538,49 @@ This is a required development/reference task, not a CI dependency.
    trace proves a defect or the new wrapper explicitly documents the safer
    alternative.
 7. Add synthetic fixtures for every protocol behavior confirmed from UDK.com.
-8. Do not derive or copy proprietary implementation code verbatim. Record
-   behavior, structures, constants, and test expectations needed for
-   interoperability.
+8. Record behavior, structures, constants, and test expectations needed for
+   interoperability. Short, attributed decompiled snippets may be included in
+   `docs/udk-com-reference.md` when they clarify behavior; do not reproduce the
+   entire proprietary implementation.
 9. Repeat the comparison after a target-protocol or UDK build change.
 
 **Acceptance criteria**
 
 - `docs/udk-com-reference.md` contains a human-readable, technically detailed
-  parity comparison without redistributing PDB or binary data.
+  behavioral reference for UDK.com and its target without wrapper-status,
+  testing, parity, or replacement advice.
+- The implementation parity matrix remains in this plan and is updated with the
+  matching UDK.com behavior and any intentional difference.
 - Every externally observable protocol decision is either matched by UDK.com or
   listed as an intentional documented difference.
 - CI depends only on synthetic fixtures, never on Ghidra, PDBs, UDK.com, or
   UDK.exe.
+
+### UDK.com implementation parity matrix
+
+This matrix belongs here because it compares the reference behavior with the
+implementation. `docs/udk-com-reference.md` records only the reference facts.
+
+| Behavior | Verified UDK.com/UE3 behavior | Current implementation | Required implementation direction |
+| --- | --- | --- | --- |
+| Target selection | UDK.com derives a same-stem `.exe` and has Win32/Win64 fallback behavior | Explicit `--executable` | Intentional generalization |
+| Working directory | UDK.com inherits its own current directory | Defaults to executable directory, with optional override | Documented intentional difference |
+| Argument forwarding | UDK.com joins strings and quotes only values containing spaces | Stronger `System.CommandLine` parsing plus CRT-aware native quoting | Intentional robustness improvement; add round-trip tests |
+| Startup order | UDK.com starts the target, then creates the PID event and pipe | Creates target suspended, then prepares protocol objects before resume | Intentional race fix |
+| Pipe name/mode | `\\.\pipe\<PID>cout`, inbound byte pipe, one instance, 1024-byte buffers | Same | Preserve |
+| Pipe security | Null default security descriptor | `CurrentUserOnly` | Intentional hardening; verify same-user target interoperability |
+| PID close event | Manual-reset, initially unsignaled `dualmode_die_event<PID>` | Auto-reset | Fix to match manual-reset semantics |
+| `ComWrapperShutdown` | Created/opened by the launcher during server Ctrl+C and shared by name | Missing | Add for cooperative server shutdown |
+| Read path | Synchronous 1024-byte reads; recognizes controls only at the start of one read | Async stream reads with boundary-aware decoder | Intentional robustness improvement |
+| UTF-16LE framing | Target writes UTF-16LE without BOM; launcher assumes complete code units per read | Stream decoder is boundary-aware but not strict yet | Preserve boundary handling and add strict fallback |
+| Color payload | First four binary digits become a base-2 index into a 16-entry foreground palette; suffix characters are ignored | Direct RGBI bit mapping, including background extension | Fix exact four-digit palette mapping; remove non-baseline background behavior |
+| `0001` color | UDK.com selects its palette entry `Black` | Current direct mapping selects intensity-only foreground | Fix and test explicitly |
+| Reset | Any control payload beginning with `Reset` calls `Console.ResetColor`; its CRLF is not printed | Case-insensitive reset, whole control CRLF consumed | More tolerant matching is acceptable; preserve whole-record consumption |
+| Normal completion | Pipe close event or process exit ends polling; a close-event path can return `0` while child state is unresolved | Waits for pipe EOF/output drain and process exit | Intentional stricter two-signal completion |
+| Exit code | Direct target exit code after process exit; `0` after close-event-only completion | Direct target code; `0` without a connection is a protocol error | Intentional diagnostic difference |
+| `-log` routing | Target sends startup through pipe, then later commandlet/compiler records to `Launch.log` | Passes through the target-selected pipe stream | Preserve; no automatic log merge |
+| Ctrl+C | Server: signal event; non-server: kill main target; no two-stage state | Two-stage graceful/forced state planned | Intentional UX/lifecycle improvement |
+| Process tree | No Job Object | Job Object planned | Intentional hardening |
 
 ### 10. Add focused unit tests
 
@@ -583,8 +620,9 @@ Decoder tests:
 - every split point in the color marker;
 - every split point in `Reset`;
 - every split point in a control record's terminating `\r\n`;
-- every binary foreground/background RGBI payload used by UE3, including
-  `0000`, `0001`, `0010`, `0100`, `1000`, `1111`, and `11111111`;
+- every four-digit foreground palette payload `0000` through `1111`, with a
+  special assertion that `0001` selects `Black`;
+- a longer suffix such as `11111111` is ignored after the first four digits;
 - no extra blank line is emitted before or after a color or reset record;
 - case-insensitive `Reset`;
 - malformed and incomplete records;
@@ -657,8 +695,8 @@ protocol. The project remains a synthetic test fixture named
 7. simulate compilation for one randomly selected total delay between 200 and
    1000 milliseconds. Allocate the delay across several visible synthetic work
    stages and report the selected duration in the controlled result metadata;
-8. emit binary color records in deliberately split byte writes, including
-   `1111` and `11111111`. Use distinct representative foreground colors for
+8. emit four-digit binary color records in deliberately split byte writes,
+   including `1000`, `1101`, and `1111`. Use distinct representative foreground colors for
    normal/log, warning, and error output, and emit `Reset` after each colored
    record or record group. Treat exact category-to-color constants as a
    development-time parity check rather than inventing new wire syntax;
@@ -674,8 +712,9 @@ modes through documented target-only arguments or a test fixture configuration;
 none of those controls may alter wrapper CLI parsing.
 
 The existing UDK.com/Ghidra evidence already defines the marker, UTF-16LE
-encoding, binary RGBI payload format, and reset record, so a new debugger session
-is not required merely to implement representative log colors. Before claiming
+encoding, four-digit foreground palette payload format, and reset record, so a
+new debugger session is not required merely to implement representative log
+colors. Before claiming
 exact parity for FakeUDK's normal/warning/error colors, perform a narrow
 PDB-backed trace of the UDK log call sites that emit color records and document
 the exact payload chosen for each severity. X64dbg is optional; static
@@ -702,9 +741,10 @@ Required scenarios:
     between 200 and 1000 milliseconds while the wrapper remains attached and
     drains all output. Assert the selected fixture value, not the wall-clock
     duration, so scheduler overhead does not make CI flaky.
-12. Assert that the normal no-`-log` path emits concise `Log:`/heading output
+12. Assert that the normal no-`-log` path emits the selected compact or
+    startup-prefix profile, plus concise `Log:`/heading output
     plus dedicated `Warning:` and `Error:` records, each with a valid non-reset
-    binary RGBI color record and `Reset` around the colored record or record
+    four-digit palette color record and `Reset` around the colored record or record
     group. Select the compact profile for this assertion and separately cover
     the startup-prefix profile to model UDK 2015.
 13. Exercise a realistic failed-compile path without `-log`: multiple
@@ -726,7 +766,7 @@ Required scenarios:
 | Successful startup-prefix `make`           | `make`; no `-log`; startup-prefix profile                  | `Init:` startup records followed by commandlet/compiler records                                                                                                                 | Match UDK 2015-style output, preserve ordinary text byte-for-byte, consume only control records, return `0`                           |
 | Failed commandlet `make`                   | `make`; synthetic compile failure                          | Package headings, `Error:` compiler diagnostics, `Warning:` records, `Compile aborted due to errors.`, warning/error summary, failure total, and elapsed time                   | Forward all records, consume color controls, return configured nonzero target code                                                    |
 | Exact argument forwarding with delayed EOF | Target argument array plus exit code `7`                   | Exact commandlet records emitted in split writes; no wrapper-added or missing tokens                                                                                            | Preserve exact argument file, continue after pipe EOF until exit, return `7`                                                          |
-| Severity/color coverage                    | Normal/log, warning, and error records                     | Text for each severity, no visible marker/reset text, and no blank line introduced by control-record CRLF                                                                       | Parse binary RGBI rather than hexadecimal, apply foreground/background attributes, consume record CRLF, leave terminal color restored |
+| Severity/color coverage                    | Normal/log, warning, and error records                     | Text for each severity, no visible marker/reset text, and no blank line introduced by control-record CRLF                                                                       | Parse UDK.com's four-digit binary palette index, consume record CRLF, apply foreground only, and leave terminal color restored |
 | `-log` routing                             | `make -log`                                                | `Init:` and early `Log:` startup records only; later compiler diagnostics and summaries absent                                                                                  | Wait for normal process exit, propagate its code, do not inspect or merge a log file                                                  |
 | Exit `0` before connection                 | Skip pipe connection and exit `0`                          | No target output                                                                                                                                                                | Report protocol error and return wrapper runtime code `1`                                                                             |
 | Nonzero exit before connection             | Skip pipe connection and exit configured nonzero code      | No target output                                                                                                                                                                | Propagate the exact target code                                                                                                       |
