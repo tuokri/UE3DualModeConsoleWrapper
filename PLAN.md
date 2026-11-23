@@ -570,7 +570,7 @@ implementation. `docs/udk-com-reference.md` records only the reference facts.
 | Pipe name/mode       | `\\.\pipe\<PID>cout`, inbound byte pipe, one instance, 1024-byte buffers                                         | Same                                                                   | Preserve                                                                |
 | Pipe security        | Null default security descriptor                                                                                 | `CurrentUserOnly`                                                      | Intentional hardening; verify same-user target interoperability         |
 | PID close event      | Manual-reset, initially unsignaled `dualmode_die_event<PID>`                                                     | Manual-reset                                                           | Matches                                                                 |
-| `ComWrapperShutdown` | Created/opened by the launcher during server Ctrl+C and shared by name                                           | Created before resume and signaled on cancellation                     | Preserve; complete the two-stage graceful/forced state later            |
+| `ComWrapperShutdown` | Created/opened by the launcher during server Ctrl+C and shared by name                                           | Created before resume and signaled on the first interrupt              | Matches cooperative protocol; two-stage UX remains intentional          |
 | Read path            | Synchronous 1024-byte reads; recognizes controls only at the start of one read                                   | Async stream reads with boundary-aware decoder                         | Intentional robustness improvement                                      |
 | UTF-16LE framing     | Target writes UTF-16LE without BOM; launcher assumes complete code units per read                                | Stream decoder is boundary-aware but not strict yet                    | Preserve boundary handling and add strict fallback                      |
 | Color payload        | First four binary digits become a base-2 index into a 16-entry foreground palette; suffix characters are ignored | Matches foreground-only palette mapping; suffix ignored                | Preserve and test                                                       |
@@ -580,7 +580,7 @@ implementation. `docs/udk-com-reference.md` records only the reference facts.
 | Exit code            | Direct target exit code after process exit; `0` after close-event-only completion                                | Direct target code; `0` without a connection is a protocol error       | Intentional diagnostic difference                                       |
 | `-log` routing       | Target sends startup through pipe, then later commandlet/compiler records to `Launch.log`                        | Passes through the target-selected pipe stream                         | Preserve; no automatic log merge                                        |
 | Ctrl+C               | Server: signal event; non-server: kill main target; no two-stage state                                           | Two-stage graceful/forced state planned                                | Intentional UX/lifecycle improvement                                    |
-| Process tree         | No Job Object                                                                                                    | Job Object planned                                                     | Intentional hardening                                                   |
+| Process tree         | No Job Object                                                                                                    | Job Object assigned before resume; kill-on-close enforced              | Intentional hardening; integration-tested                               |
 
 ### 10. Add focused unit tests
 
@@ -705,7 +705,7 @@ protocol. The project remains a synthetic test fixture named
    record or record group. Treat exact category-to-color constants as a
    development-time parity check rather than inventing new wire syntax;
 10. close the pipe before remaining alive when the corresponding scenario
-   requests it;
+    requests it;
 11. exit with a selected code;
 12. block indefinitely when requested;
 13. start a tracked descendant for process-tree tests.

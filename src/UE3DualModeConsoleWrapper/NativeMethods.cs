@@ -14,11 +14,15 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 
 namespace UE3DualModeConsoleWrapper;
 
 internal static partial class NativeMethods
 {
+    internal const uint JobObjectLimitKillOnJobClose = 0x00002000;
+    internal const int JobObjectInfoClassExtendedLimitInformation = 9;
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     internal struct StartupInfo
     {
@@ -51,6 +55,42 @@ internal static partial class NativeMethods
         public uint ThreadId;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct IoCounters
+    {
+        public ulong ReadOperationCount;
+        public ulong WriteOperationCount;
+        public ulong OtherOperationCount;
+        public ulong ReadTransferCount;
+        public ulong WriteTransferCount;
+        public ulong OtherTransferCount;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct JobObjectBasicLimitInformation
+    {
+        public long PerProcessUserTimeLimit;
+        public long PerJobUserTimeLimit;
+        public uint LimitFlags;
+        public nuint MinimumWorkingSetSize;
+        public nuint MaximumWorkingSetSize;
+        public uint ActiveProcessLimit;
+        public nuint Affinity;
+        public uint PriorityClass;
+        public uint SchedulingClass;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct JobObjectExtendedLimitInformation
+    {
+        public JobObjectBasicLimitInformation BasicLimitInformation;
+        public IoCounters IoInfo;
+        public nuint ProcessMemoryLimit;
+        public nuint JobMemoryLimit;
+        public nuint PeakProcessMemoryUsed;
+        public nuint PeakJobMemoryUsed;
+    }
+
     [LibraryImport(
         "kernel32.dll",
         EntryPoint = "CreateProcessW",
@@ -68,6 +108,35 @@ internal static partial class NativeMethods
         string currentDirectory,
         ref StartupInfo startupInfo,
         out ProcessInformation processInformation);
+
+    [LibraryImport(
+        "kernel32.dll",
+        EntryPoint = "CreateJobObjectW",
+        StringMarshalling = StringMarshalling.Utf16,
+        SetLastError = true)]
+    internal static partial SafeFileHandle CreateJobObject(
+        nint jobAttributes,
+        string? name);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool SetInformationJobObject(
+        SafeFileHandle job,
+        int jobObjectInformationClass,
+        ref JobObjectExtendedLimitInformation jobObjectInformation,
+        uint jobObjectInformationLength);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool AssignProcessToJobObject(
+        SafeFileHandle job,
+        SafeProcessHandle process);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool TerminateJobObject(
+        SafeFileHandle job,
+        uint exitCode);
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     internal static partial uint ResumeThread(nint thread);

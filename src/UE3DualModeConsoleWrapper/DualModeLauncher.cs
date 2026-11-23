@@ -39,6 +39,7 @@ internal static class DualModeLauncher
         ArgumentException.ThrowIfNullOrWhiteSpace(workingDirectory);
         ArgumentNullException.ThrowIfNull(arguments);
 
+        using var job = CreateJobObject();
         var started = StartSuspended(applicationPath, workingDirectory, arguments);
         using var nativeProcess = started.Process;
         using var nativeThread = started.Thread;
@@ -48,9 +49,17 @@ internal static class DualModeLauncher
         Task? pipeConnection = null;
         CancellationTokenSource? connectionCancellation = null;
         var resumed = false;
+        var forceTerminationStarted = 0;
 
         try
         {
+            if (!NativeMethods.AssignProcessToJobObject(job, nativeProcess))
+            {
+                throw new Win32Exception(
+                    Marshal.GetLastWin32Error(),
+                    "Failed to assign the suspended target process to the Job Object.");
+            }
+
             process = Process.GetProcessById(checked((int)started.ProcessId));
             await using var pipe = new NamedPipeServerStream(
                 started.ProcessId.ToString(CultureInfo.InvariantCulture) + "cout",
@@ -69,10 +78,26 @@ internal static class DualModeLauncher
                 initialState: false,
                 EventResetMode.ManualReset,
                 "ComWrapperShutdown");
-            await using var shutdownRegistration = cancellationToken.Register(() => shutdownEvent.Set());
-
             connectionCancellation =
                 CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            using var interruptController = new ConsoleInterruptController(
+                () =>
+                {
+                    shutdownEvent.Set();
+                    QueueMainWindowClose(process);
+                },
+                () =>
+                    ForceTerminateJob(
+                        job,
+                        connectionCancellation,
+                        ref forceTerminationStarted),
+                registerWithConsole: true);
+            using var cancellationRegistration = cancellationToken.Register(() =>
+                ForceTerminateJob(
+                    job,
+                    connectionCancellation,
+                    ref forceTerminationStarted));
+
             pipeConnection = pipe.WaitForConnectionAsync(connectionCancellation.Token);
             processExit = process.WaitForExitAsync(cancellationToken);
 
@@ -106,13 +131,17 @@ internal static class DualModeLauncher
                         "The target exited without connecting to its dual-mode output pipe.");
                 }
 
-                return process.ExitCode;
+                return interruptController.ShutdownRequested
+                    ? ExitCode.Cancelled
+                    : process.ExitCode;
             }
 
             await pipeConnection.ConfigureAwait(false);
             var output = ForwardOutputAsync(pipe, noColor, cancellationToken);
             await Task.WhenAll(output, processExit).ConfigureAwait(false);
-            return process.ExitCode;
+            return interruptController.ShutdownRequested
+                ? ExitCode.Cancelled
+                : process.ExitCode;
         }
         catch (Exception operationError)
         {
@@ -127,8 +156,10 @@ internal static class DualModeLauncher
                 await StopProcessAsync(
                         process,
                         nativeProcess,
+                        job,
                         resumed,
-                        processExit)
+                        processExit,
+                        forceTerminationStarted)
                     .ConfigureAwait(false);
             }
             catch (Exception cleanupError)
@@ -146,6 +177,85 @@ internal static class DualModeLauncher
             connectionCancellation?.Dispose();
             process?.Dispose();
         }
+    }
+
+    private static SafeFileHandle CreateJobObject()
+    {
+        var job = NativeMethods.CreateJobObject(
+            jobAttributes: nint.Zero,
+            name: null);
+        if (job.IsInvalid)
+        {
+            job.Dispose();
+            throw new Win32Exception(
+                Marshal.GetLastWin32Error(),
+                "Failed to create the target Job Object.");
+        }
+
+        var information = new NativeMethods.JobObjectExtendedLimitInformation
+        {
+            BasicLimitInformation = new NativeMethods.JobObjectBasicLimitInformation
+            {
+                LimitFlags = NativeMethods.JobObjectLimitKillOnJobClose
+            }
+        };
+        if (!NativeMethods.SetInformationJobObject(
+                job,
+                NativeMethods.JobObjectInfoClassExtendedLimitInformation,
+                ref information,
+                checked((uint)Marshal.SizeOf<NativeMethods.JobObjectExtendedLimitInformation>())))
+        {
+            job.Dispose();
+            throw new Win32Exception(
+                Marshal.GetLastWin32Error(),
+                "Failed to configure the target Job Object.");
+        }
+
+        return job;
+    }
+
+    private static void ForceTerminateJob(
+        SafeFileHandle job,
+        CancellationTokenSource cancellation,
+        ref int forceTerminationStarted)
+    {
+        if (Interlocked.CompareExchange(ref forceTerminationStarted, 1, 0) != 0)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!NativeMethods.TerminateJobObject(job, ExitCode.Cancelled))
+            {
+                Volatile.Write(ref forceTerminationStarted, 2);
+            }
+        }
+        catch
+        {
+            Volatile.Write(ref forceTerminationStarted, 2);
+        }
+        finally
+        {
+            cancellation.Cancel();
+        }
+    }
+
+    private static void QueueMainWindowClose(Process process)
+    {
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                if (process.MainWindowHandle != nint.Zero)
+                {
+                    process.CloseMainWindow();
+                }
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        });
     }
 
     private static unsafe StartedProcessHandles StartSuspended(
@@ -222,8 +332,10 @@ internal static class DualModeLauncher
     private static async Task StopProcessAsync(
         Process? process,
         SafeProcessHandle nativeProcess,
+        SafeFileHandle job,
         bool resumed,
-        Task? processExit)
+        Task? processExit,
+        int forceTerminationStarted)
     {
         if (process is null)
         {
@@ -253,7 +365,13 @@ internal static class DualModeLauncher
         {
             if (resumed)
             {
-                process.Kill(entireProcessTree: true);
+                if (forceTerminationStarted != 1 &&
+                    !NativeMethods.TerminateJobObject(job, ExitCode.RuntimeError))
+                {
+                    throw new Win32Exception(
+                        Marshal.GetLastWin32Error(),
+                        "Failed to terminate the target Job Object.");
+                }
             }
             else if (!NativeMethods.TerminateProcess(
                          nativeProcess.DangerousGetHandle(),

@@ -8,9 +8,11 @@ using System.Text.Json;
 var logOption = new Option<bool>("-log");
 var noConnectOption = new Option<bool>("--fake-no-connect");
 var blockOption = new Option<bool>("--fake-block");
+var holdAfterShutdownOption = new Option<bool>("--fake-hold-after-shutdown");
 var failOption = new Option<bool>("--fake-fail");
 var descendantOption = new Option<bool>("--fake-descendant");
 var childOption = new Option<bool>("--fake-child");
+var childReadyPathOption = new Option<string?>("--fake-child-ready-path");
 var closeBeforeExitOption = new Option<bool>("--fake-close-before-exit");
 var profileOption = new Option<string>("--fake-profile")
 {
@@ -33,9 +35,11 @@ var command = new RootCommand("Synthetic UE3 dual-mode protocol target.")
 command.Options.Add(logOption);
 command.Options.Add(noConnectOption);
 command.Options.Add(blockOption);
+command.Options.Add(holdAfterShutdownOption);
 command.Options.Add(failOption);
 command.Options.Add(descendantOption);
 command.Options.Add(childOption);
+command.Options.Add(childReadyPathOption);
 command.Options.Add(closeBeforeExitOption);
 command.Options.Add(profileOption);
 command.Options.Add(delayOption);
@@ -59,9 +63,11 @@ command.SetAction(async (parseResult, cancellationToken) =>
         UseLogRouting = parseResult.GetValue(logOption),
         SkipPipeConnection = parseResult.GetValue(noConnectOption),
         Block = parseResult.GetValue(blockOption),
+        HoldAfterShutdown = parseResult.GetValue(holdAfterShutdownOption),
         FailCompilation = parseResult.GetValue(failOption),
         StartDescendant = parseResult.GetValue(descendantOption),
         ChildMode = parseResult.GetValue(childOption),
+        ChildReadyPath = parseResult.GetValue(childReadyPathOption),
         ClosePipeBeforeExit = parseResult.GetValue(closeBeforeExitOption),
         ExitCode = parseResult.GetValue(exitCodeOption),
         SelectedDelayMilliseconds = selectedDelay ??
@@ -145,18 +151,32 @@ internal static class FakeUDK
 
         WriteMetadata(options.MetadataPath, metadata);
 
+        if (options.Block || options.ChildMode)
+        {
+            Console.CancelKeyPress += (_, eventArgs) => eventArgs.Cancel = true;
+        }
+
         if (options.ChildMode)
         {
             metadata.IsDescendant = true;
             metadata.State = "blocking-descendant";
             WriteMetadata(options.MetadataPath, metadata);
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+            if (options.ChildReadyPath is not null)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(options.ChildReadyPath)!);
+                File.WriteAllText(options.ChildReadyPath, "ready");
+            }
+
+            await Task.Delay(Timeout.InfiniteTimeSpan).ConfigureAwait(false);
             return 0;
         }
 
         if (options.StartDescendant)
         {
-            metadata.ChildPid = StartDescendant();
+            metadata.ChildReadyPath = options.MetadataPath is null
+                ? null
+                : options.MetadataPath + ".child-ready";
+            metadata.ChildPid = StartDescendant(metadata.ChildReadyPath);
             WriteMetadata(options.MetadataPath, metadata);
         }
 
@@ -221,7 +241,7 @@ internal static class FakeUDK
                 if (shutdownEvent is null)
                 {
                     await Task
-                        .Delay(Timeout.InfiniteTimeSpan, cancellationToken)
+                        .Delay(Timeout.InfiniteTimeSpan)
                         .ConfigureAwait(false);
                 }
                 else
@@ -234,6 +254,14 @@ internal static class FakeUDK
                             pipe,
                             "Log: Cooperative shutdown requested\r\n")
                         .ConfigureAwait(false);
+                    if (options.HoldAfterShutdown)
+                    {
+                        metadata.State = "shutdown-held";
+                        WriteMetadata(options.MetadataPath, metadata);
+                        await Task
+                            .Delay(Timeout.InfiniteTimeSpan)
+                            .ConfigureAwait(false);
+                    }
                 }
             }
             else
@@ -536,7 +564,7 @@ internal static class FakeUDK
         await Task.Run(shutdownEvent.WaitOne).ConfigureAwait(false);
     }
 
-    private static int StartDescendant()
+    private static int StartDescendant(string? readyPath)
     {
         if (Environment.ProcessPath is null)
         {
@@ -548,6 +576,11 @@ internal static class FakeUDK
             UseShellExecute = false
         };
         startInfo.ArgumentList.Add("--fake-child");
+        if (readyPath is not null)
+        {
+            startInfo.ArgumentList.Add("--fake-child-ready-path");
+            startInfo.ArgumentList.Add(readyPath);
+        }
 
         var child = Process.Start(startInfo) ??
                     throw new InvalidOperationException("Failed to start FakeUDK descendant.");
@@ -568,10 +601,31 @@ internal static class FakeUDK
             Directory.CreateDirectory(directory);
         }
 
+        var temporaryPath = fullPath + "." + Environment.ProcessId + "." +
+                            Guid.NewGuid().ToString("N") + ".tmp";
         File.WriteAllText(
-            fullPath,
+            temporaryPath,
             JsonSerializer.Serialize(metadata, JsonOptions),
             new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        for (var attempt = 0;; attempt++)
+        {
+            try
+            {
+                File.Move(
+                    temporaryPath,
+                    fullPath,
+                    overwrite: true);
+                break;
+            }
+            catch (IOException) when (attempt < 20)
+            {
+                Thread.Sleep(10);
+            }
+            catch (UnauthorizedAccessException) when (attempt < 20)
+            {
+                Thread.Sleep(10);
+            }
+        }
     }
 
     private sealed class FakeCompilationStage(string name, string output)
@@ -590,6 +644,8 @@ internal static class FakeUDK
         public int Pid { get; set; }
 
         public int? ChildPid { get; set; }
+
+        public string? ChildReadyPath { get; set; }
 
         public bool IsDescendant { get; set; }
 
@@ -631,11 +687,15 @@ internal sealed class FakeUDKOptions
 
     public bool Block { get; init; }
 
+    public bool HoldAfterShutdown { get; init; }
+
     public bool FailCompilation { get; init; }
 
     public bool StartDescendant { get; init; }
 
     public bool ChildMode { get; init; }
+
+    public string? ChildReadyPath { get; init; }
 
     public int ExitCode { get; set; }
 

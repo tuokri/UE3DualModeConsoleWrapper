@@ -16,15 +16,47 @@ public sealed class DualModeLauncherLifecycleTests
     [Fact]
     public void FirstSignalUsesCooperativeShutdownAndKeepsDraining()
     {
-        // TODO: Verify ComWrapperShutdown signaling and continued output draining.
-        Assert.Fail("TODO: Verify first-signal graceful shutdown.");
+        var gracefulCount = 0;
+        var forcedCount = 0;
+        var messages = new List<string>();
+        var controller = new ConsoleInterruptController(
+            () => gracefulCount++,
+            () => forcedCount++,
+            messages.Add);
+
+        controller.HandleInterrupt();
+
+        Assert.True(controller.ShutdownRequested);
+        Assert.Equal(1, gracefulCount);
+        Assert.Equal(0, forcedCount);
+        Assert.Equal(
+            ["Exiting... Press Ctrl+C again to force exit."],
+            messages);
     }
 
     [Fact]
     public void SecondSignalTerminatesJobIdempotently()
     {
-        // TODO: Verify repeated force requests terminate the job only once.
-        Assert.Fail("TODO: Verify second-signal forced shutdown.");
+        var gracefulCount = 0;
+        var forcedCount = 0;
+        var messages = new List<string>();
+        var controller = new ConsoleInterruptController(
+            () => gracefulCount++,
+            () => forcedCount++,
+            messages.Add);
+
+        controller.HandleInterrupt();
+        controller.HandleInterrupt();
+        controller.HandleInterrupt();
+
+        Assert.Equal(1, gracefulCount);
+        Assert.Equal(1, forcedCount);
+        Assert.Equal(
+            [
+                "Exiting... Press Ctrl+C again to force exit.",
+                "Forcing exit..."
+            ],
+            messages);
     }
 
     [Fact]
