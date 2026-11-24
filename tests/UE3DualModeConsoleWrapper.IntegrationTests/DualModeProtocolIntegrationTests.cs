@@ -103,12 +103,12 @@ public sealed partial class DualModeProtocolIntegrationTests
             var connected = await WaitForMetadataAsync(
                 resultPath,
                 value => value is
-                         {
-                             EventsOpened: true,
-                             PipeConnected: true,
-                             ChildPid: not null,
-                             ChildReadyPath: not null
-                         } &&
+                {
+                    EventsOpened: true,
+                    PipeConnected: true,
+                    ChildPid: not null,
+                    ChildReadyPath: not null
+                } &&
                          File.Exists(value.ChildReadyPath));
             var targetPid = connected.Pid;
             Debug.Assert(connected.ChildPid != null);

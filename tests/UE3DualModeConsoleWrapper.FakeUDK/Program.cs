@@ -607,7 +607,7 @@ internal static class FakeUDK
             temporaryPath,
             JsonSerializer.Serialize(metadata, JsonOptions),
             new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-        for (var attempt = 0;; attempt++)
+        for (var attempt = 0; ; attempt++)
         {
             try
             {
