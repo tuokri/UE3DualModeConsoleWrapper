@@ -7,6 +7,7 @@ namespace UE3DualModeConsoleWrapper.UnitTests;
 public sealed class DualModeLauncherLifecycleTests
 {
     [Fact]
+    [Trait("Status", "TODO")]
     public void CreatesManualResetProtocolEvents()
     {
         // TODO: Verify dualmode_die_event<PID> and ComWrapperShutdown are manual reset.
@@ -60,6 +61,7 @@ public sealed class DualModeLauncherLifecycleTests
     }
 
     [Fact]
+    [Trait("Status", "TODO")]
     public void CleansUpStartupAndRuntimeFailures()
     {
         // TODO: Cover start, job assignment, resume, pipe, and cleanup failures.

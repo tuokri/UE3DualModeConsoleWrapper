@@ -2,6 +2,7 @@ using Xunit;
 
 namespace UE3DualModeConsoleWrapper.UnitTests;
 
+[Trait("Status", "TODO")]
 public sealed class ProgramCommandLineTests
 {
     [Fact]
