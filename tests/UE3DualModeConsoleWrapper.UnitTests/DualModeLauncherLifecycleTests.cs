@@ -4,6 +4,8 @@ using Xunit;
 namespace UE3DualModeConsoleWrapper.UnitTests;
 
 [SupportedOSPlatform("windows")]
+[Trait("Category", "Unit")]
+[Trait("Area", "Lifecycle")]
 public sealed class DualModeLauncherLifecycleTests
 {
     [Fact]

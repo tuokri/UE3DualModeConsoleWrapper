@@ -3,6 +3,8 @@ using Xunit;
 
 namespace UE3DualModeConsoleWrapper.UnitTests;
 
+[Trait("Category", "Unit")]
+[Trait("Area", "Output")]
 public sealed class DualModeOutputDecoderTests
 {
     [Fact]

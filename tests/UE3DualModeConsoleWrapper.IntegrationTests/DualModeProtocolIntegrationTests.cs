@@ -9,6 +9,8 @@ using Xunit;
 namespace UE3DualModeConsoleWrapper.IntegrationTests;
 
 [SupportedOSPlatform("windows")]
+[Trait("Category", "Integration")]
+[Trait("Area", "Protocol")]
 public sealed partial class DualModeProtocolIntegrationTests
 {
     [Fact(Timeout = 30_000)]

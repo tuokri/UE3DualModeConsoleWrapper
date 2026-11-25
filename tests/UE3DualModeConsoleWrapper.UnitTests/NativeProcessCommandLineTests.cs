@@ -6,6 +6,8 @@ using Xunit;
 namespace UE3DualModeConsoleWrapper.UnitTests;
 
 [SupportedOSPlatform("windows")]
+[Trait("Category", "Unit")]
+[Trait("Area", "CommandLine")]
 public sealed partial class NativeProcessCommandLineTests
 {
     public static TheoryData<string, string> QuotingCases => new()

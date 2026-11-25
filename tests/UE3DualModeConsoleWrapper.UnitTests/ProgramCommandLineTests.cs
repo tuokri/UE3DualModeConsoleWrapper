@@ -2,6 +2,8 @@ using Xunit;
 
 namespace UE3DualModeConsoleWrapper.UnitTests;
 
+[Trait("Category", "Unit")]
+[Trait("Area", "CLI")]
 [Trait("Status", "TODO")]
 public sealed class ProgramCommandLineTests
 {
