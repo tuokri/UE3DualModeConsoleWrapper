@@ -91,11 +91,10 @@ command.SetAction(async (parseResult, cancellationToken) =>
     }
 
     return await FakeUDK
-        .RunAsync(args, options, cancellationToken)
-        .ConfigureAwait(false);
+        .RunAsync(args, options, cancellationToken);
 });
 
-return await command.Parse(args).InvokeAsync().ConfigureAwait(false);
+return await command.Parse(args).InvokeAsync();
 
 internal static class FakeUDK
 {
@@ -163,11 +162,15 @@ internal static class FakeUDK
             WriteMetadata(options.MetadataPath, metadata);
             if (options.ChildReadyPath is not null)
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(options.ChildReadyPath)!);
-                File.WriteAllText(options.ChildReadyPath, "ready");
+                var path = options.ChildReadyPath ?? throw new InvalidOperationException("ChildReadyPath is null.");
+                path = Path.GetDirectoryName(path) ??
+                       throw new InvalidOperationException($"Cannot get directory name for path '{path}'.");
+
+                Directory.CreateDirectory(path);
+                await File.WriteAllTextAsync(options.ChildReadyPath, "ready", cancellationToken);
             }
 
-            await Task.Delay(Timeout.InfiniteTimeSpan).ConfigureAwait(false);
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
             return 0;
         }
 
@@ -197,8 +200,7 @@ internal static class FakeUDK
                 metadata.State = "delaying-connection";
                 WriteMetadata(options.MetadataPath, metadata);
                 await Task
-                    .Delay(options.ConnectionDelayMilliseconds, cancellationToken)
-                    .ConfigureAwait(false);
+                    .Delay(options.ConnectionDelayMilliseconds, cancellationToken);
             }
 
             pipe = new NamedPipeClientStream(
@@ -240,27 +242,22 @@ internal static class FakeUDK
                 WriteMetadata(options.MetadataPath, metadata);
                 if (shutdownEvent is null)
                 {
-                    await Task
-                        .Delay(Timeout.InfiniteTimeSpan)
-                        .ConfigureAwait(false);
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
                 }
                 else
                 {
-                    await WaitForShutdownAsync(shutdownEvent).ConfigureAwait(false);
+                    await WaitForShutdownAsync(shutdownEvent);
                     metadata.ShutdownRequested = true;
                     metadata.State = "shutdown-requested";
                     WriteMetadata(options.MetadataPath, metadata);
                     await WriteRecordAsync(
-                            pipe,
-                            "Log: Cooperative shutdown requested\r\n")
-                        .ConfigureAwait(false);
+                        pipe,
+                        "Log: Cooperative shutdown requested\r\n");
                     if (options.HoldAfterShutdown)
                     {
                         metadata.State = "shutdown-held";
                         WriteMetadata(options.MetadataPath, metadata);
-                        await Task
-                            .Delay(Timeout.InfiniteTimeSpan)
-                            .ConfigureAwait(false);
+                        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
                     }
                 }
             }
@@ -275,7 +272,7 @@ internal static class FakeUDK
                     metadata,
                     shutdownTask,
                     cancellationToken);
-                await compilationOutput.ConfigureAwait(false);
+                await compilationOutput;
                 metadata.ShutdownRequested =
                     shutdownTask.IsCompletedSuccessfully;
             }
@@ -296,8 +293,7 @@ internal static class FakeUDK
                 {
                     await Task
                         .Delay(options.DelayAfterCloseMilliseconds, cancellationToken)
-                        .WaitAsync(cancellationToken)
-                        .ConfigureAwait(false);
+                        .WaitAsync(cancellationToken);
                 }
             }
 
@@ -339,21 +335,18 @@ internal static class FakeUDK
 
         if (options.UseLogRouting)
         {
-            await WriteRecordAsync(pipe, "Init: Version: 12791\r\n").ConfigureAwait(false);
+            await WriteRecordAsync(pipe, "Init: Version: 12791\r\n");
             await WriteRecordAsync(
-                    pipe,
-                    "Init: Command line: make -log\r\n")
-                .ConfigureAwait(false);
+                pipe,
+                "Init: Command line: make -log\r\n");
             await WriteSeverityRecordAsync(
-                    pipe,
-                    "1111",
-                    "Log: Executing Class UnrealEd.MakeCommandlet\r\n")
-                .ConfigureAwait(false);
+                pipe,
+                "1111",
+                "Log: Executing Class UnrealEd.MakeCommandlet\r\n");
             var completed = await Task
                 .WhenAny(
                     Task.Delay(options.SelectedDelayMilliseconds, cancellationToken),
-                    shutdownTask)
-                .ConfigureAwait(false);
+                    shutdownTask);
             if (completed == shutdownTask)
             {
                 metadata.ShutdownRequested = true;
@@ -367,18 +360,16 @@ internal static class FakeUDK
 
         if (options.Profile == FakeUDKProfile.StartupPrefix)
         {
-            await WriteRecordAsync(pipe, "Init: Version: 12791\r\n").ConfigureAwait(false);
+            await WriteRecordAsync(pipe, "Init: Version: 12791\r\n");
             await WriteRecordAsync(
-                    pipe,
-                    "Init: Base directory: C:\\FakeUDK\\Binaries\\Win64\\\r\n")
-                .ConfigureAwait(false);
+                pipe,
+                "Init: Base directory: C:\\FakeUDK\\Binaries\\Win64\\\r\n");
         }
 
         await WriteSeverityRecordAsync(
-                pipe,
-                "1111",
-                "Log: Executing Class UnrealEd.MakeCommandlet\r\n")
-            .ConfigureAwait(false);
+            pipe,
+            "1111",
+            "Log: Executing Class UnrealEd.MakeCommandlet\r\n");
 
         for (var index = 0; index < stages.Count; index++)
         {
@@ -386,21 +377,19 @@ internal static class FakeUDK
             metadata.CurrentStage = stage.Name;
             metadata.CompletedStages = index;
             WriteMetadata(options.MetadataPath, metadata);
-            await WriteRecordAsync(pipe, stage.Output).ConfigureAwait(false);
+            await WriteRecordAsync(pipe, stage.Output);
             var completed = await Task
                 .WhenAny(
                     Task.Delay(stage.DelayMilliseconds, cancellationToken),
-                    shutdownTask)
-                .ConfigureAwait(false);
+                    shutdownTask);
             if (completed == shutdownTask)
             {
                 metadata.ShutdownRequested = true;
                 metadata.State = "shutdown-requested";
                 WriteMetadata(options.MetadataPath, metadata);
                 await WriteRecordAsync(
-                        pipe,
-                        "Log: Cooperative shutdown requested\r\n")
-                    .ConfigureAwait(false);
+                    pipe,
+                    "Log: Cooperative shutdown requested\r\n");
                 return;
             }
         }
@@ -409,40 +398,34 @@ internal static class FakeUDK
         if (options.FailCompilation)
         {
             await WriteSeverityRecordAsync(
-                    pipe,
-                    "1101",
-                    "Synthetic.uc(17) : Warning, unused local variable\r\n")
-                .ConfigureAwait(false);
+                pipe,
+                "1101",
+                "Synthetic.uc(17) : Warning, unused local variable\r\n");
             await WriteSeverityRecordAsync(
-                    pipe,
-                    "1001",
-                    "Synthetic.uc(23) : Error, Bad command or expression\r\n")
-                .ConfigureAwait(false);
-            await WriteRecordAsync(pipe, "Compile aborted due to errors.\r\n").ConfigureAwait(false);
-            await WriteRecordAsync(pipe, "\r\nWarning/Error Summary\r\n---------------------\r\n")
-                .ConfigureAwait(false);
+                pipe,
+                "1001",
+                "Synthetic.uc(23) : Error, Bad command or expression\r\n");
+            await WriteRecordAsync(pipe, "Compile aborted due to errors.\r\n");
+            await WriteRecordAsync(pipe, "\r\nWarning/Error Summary\r\n---------------------\r\n");
             await WriteSeverityRecordAsync(
-                    pipe,
-                    "1001",
-                    "Synthetic.uc(23) : Error, Bad command or expression\r\n")
-                .ConfigureAwait(false);
-            await WriteRecordAsync(pipe, "\r\nFailure - 1 error(s), 1 warning(s)\r\n").ConfigureAwait(false);
+                pipe,
+                "1001",
+                "Synthetic.uc(23) : Error, Bad command or expression\r\n");
+            await WriteRecordAsync(pipe, "\r\nFailure - 1 error(s), 1 warning(s)\r\n");
         }
         else
         {
             await WriteRecordAsync(
-                    pipe,
-                    "Log: Scripts successfully compiled - saving package FakeUDK.u\r\n")
-                .ConfigureAwait(false);
-            await WriteRecordAsync(pipe, "\r\nSuccess - 0 error(s), 0 warning(s)\r\n").ConfigureAwait(false);
+                pipe,
+                "Log: Scripts successfully compiled - saving package FakeUDK.u\r\n");
+            await WriteRecordAsync(pipe, "\r\nSuccess - 0 error(s), 0 warning(s)\r\n");
         }
 
         await WriteRecordAsync(
-                pipe,
-                $"Execution of commandlet took:  " +
-                $"{(options.SelectedDelayMilliseconds / 1000.0).ToString(
-                    "0.00", CultureInfo.InvariantCulture)} seconds\r\n")
-            .ConfigureAwait(false);
+            pipe,
+            $"Execution of commandlet took:  " +
+            $"{(options.SelectedDelayMilliseconds / 1000.0).ToString(
+                "0.00", CultureInfo.InvariantCulture)} seconds\r\n");
         metadata.State = "compilation-finished";
         WriteMetadata(options.MetadataPath, metadata);
     }
@@ -476,9 +459,9 @@ internal static class FakeUDK
         string binaryColor,
         string text)
     {
-        await WriteControlRecordAsync(pipe, binaryColor).ConfigureAwait(false);
-        await WriteRecordAsync(pipe, text).ConfigureAwait(false);
-        await WriteControlRecordAsync(pipe, ResetCommand).ConfigureAwait(false);
+        await WriteControlRecordAsync(pipe, binaryColor);
+        await WriteRecordAsync(pipe, text);
+        await WriteControlRecordAsync(pipe, ResetCommand);
     }
 
     private static async Task WriteControlRecordAsync(
@@ -524,10 +507,8 @@ internal static class FakeUDK
         {
             if (splitPoint > offset)
             {
-                await pipe
-                    .WriteAsync(bytes.AsMemory(offset, splitPoint - offset))
-                    .ConfigureAwait(false);
-                await pipe.FlushAsync().ConfigureAwait(false);
+                await pipe.WriteAsync(bytes.AsMemory(offset, splitPoint - offset));
+                await pipe.FlushAsync();
                 offset = splitPoint;
             }
         }
@@ -539,29 +520,30 @@ internal static class FakeUDK
     {
         if (pipe is null)
         {
-            await Console.Out.WriteAsync(text).ConfigureAwait(false);
-            await Console.Out.FlushAsync().ConfigureAwait(false);
+            await Console.Out.WriteAsync(text);
+            await Console.Out.FlushAsync();
             return;
         }
 
         var bytes = OutputEncoding.GetBytes(text);
         if (bytes.Length > 3)
         {
-            await pipe.WriteAsync(bytes.AsMemory(0, 1)).ConfigureAwait(false);
-            await pipe.WriteAsync(bytes.AsMemory(1, 2)).ConfigureAwait(false);
-            await pipe.WriteAsync(bytes.AsMemory(3)).ConfigureAwait(false);
+            await pipe.WriteAsync(bytes.AsMemory(0, 1));
+            await pipe.WriteAsync(bytes.AsMemory(1, 2));
+            await pipe.WriteAsync(bytes.AsMemory(3));
         }
         else
         {
-            await pipe.WriteAsync(bytes.AsMemory()).ConfigureAwait(false);
+            await pipe.WriteAsync(bytes.AsMemory());
         }
 
-        await pipe.FlushAsync().ConfigureAwait(false);
+        await pipe.FlushAsync();
     }
 
     private static async Task WaitForShutdownAsync(EventWaitHandle shutdownEvent)
     {
-        await Task.Run(shutdownEvent.WaitOne).ConfigureAwait(false);
+        await Task.Run(shutdownEvent.WaitOne);
+        await Task.Run(shutdownEvent.WaitOne);
     }
 
     private static int StartDescendant(string? readyPath)

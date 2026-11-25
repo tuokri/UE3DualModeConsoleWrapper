@@ -92,7 +92,7 @@ internal static class DualModeLauncher
                         connectionCancellation,
                         ref forceTerminationStarted),
                 registerWithConsole: true);
-            using var cancellationRegistration = cancellationToken.Register(() =>
+            await using var cancellationRegistration = cancellationToken.Register(() =>
                 ForceTerminateJob(
                     job,
                     connectionCancellation,
@@ -110,21 +110,22 @@ internal static class DualModeLauncher
             }
 
             resumed = true;
+            // ReSharper disable once DisposeOnUsingVariable
             nativeThread.Dispose();
 
-            var firstCompleted = await Task.WhenAny(pipeConnection, processExit).ConfigureAwait(false);
+            var firstCompleted = await Task.WhenAny(pipeConnection, processExit);
             if (firstCompleted == processExit && !pipe.IsConnected && !pipeConnection.IsCompleted)
             {
                 await connectionCancellation.CancelAsync();
                 try
                 {
-                    await pipeConnection.ConfigureAwait(false);
+                    await pipeConnection;
                 }
                 catch (OperationCanceledException) when (connectionCancellation.IsCancellationRequested)
                 {
                 }
 
-                await processExit.ConfigureAwait(false);
+                await processExit;
                 if (process.ExitCode == ExitCode.Success)
                 {
                     throw new InvalidOperationException(
@@ -136,9 +137,9 @@ internal static class DualModeLauncher
                     : process.ExitCode;
             }
 
-            await pipeConnection.ConfigureAwait(false);
+            await pipeConnection;
             var output = ForwardOutputAsync(pipe, noColor, cancellationToken);
-            await Task.WhenAll(output, processExit).ConfigureAwait(false);
+            await Task.WhenAll(output, processExit);
             return interruptController.ShutdownRequested
                 ? ExitCode.Cancelled
                 : process.ExitCode;
@@ -150,17 +151,16 @@ internal static class DualModeLauncher
                 await connectionCancellation.CancelAsync();
             }
 
-            await ObservePendingConnectionAsync(pipeConnection).ConfigureAwait(false);
+            await ObservePendingConnectionAsync(pipeConnection);
             try
             {
                 await StopProcessAsync(
-                        process,
-                        nativeProcess,
-                        job,
-                        resumed,
-                        processExit,
-                        forceTerminationStarted)
-                    .ConfigureAwait(false);
+                    process,
+                    nativeProcess,
+                    job,
+                    resumed,
+                    processExit,
+                    forceTerminationStarted);
             }
             catch (Exception cleanupError)
             {
@@ -304,7 +304,7 @@ internal static class DualModeLauncher
         CancellationToken cancellationToken)
     {
         var decoder = new DualModeOutputDecoder(!noColor);
-        await decoder.DecodeAsync(pipe, cancellationToken).ConfigureAwait(false);
+        await decoder.DecodeAsync(pipe, cancellationToken);
     }
 
     private static async Task ObservePendingConnectionAsync(Task? connection)
@@ -316,7 +316,7 @@ internal static class DualModeLauncher
 
         try
         {
-            await connection.ConfigureAwait(false);
+            await connection;
         }
         catch (OperationCanceledException)
         {
@@ -389,7 +389,7 @@ internal static class DualModeLauncher
         {
         }
 
-        await process.WaitForExitAsync().ConfigureAwait(false);
+        await process.WaitForExitAsync();
     }
 
     private readonly record struct StartedProcessHandles(

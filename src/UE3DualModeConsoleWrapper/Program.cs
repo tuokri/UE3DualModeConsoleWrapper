@@ -70,15 +70,16 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
                                Path.GetDirectoryName(Path.GetFullPath(executablePath)) ??
                                Environment.CurrentDirectory;
 
+        var noColor = parseResult.GetValue(noColorOption)
+                      || Environment.GetEnvironmentVariable("NO_COLOR") is not null;
+
         return await UE3DualModeConsoleWrapper.DualModeLauncher
             .RunAsync(
                 executablePath,
                 workingDirectory,
                 parseResult.GetValue(targetArgumentsArgument) ?? [],
-                parseResult.GetValue(noColorOption) ||
-                Environment.GetEnvironmentVariable("NO_COLOR") is not null,
-                cancellationToken)
-            .ConfigureAwait(false);
+                noColor,
+                cancellationToken);
     }
     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
     {

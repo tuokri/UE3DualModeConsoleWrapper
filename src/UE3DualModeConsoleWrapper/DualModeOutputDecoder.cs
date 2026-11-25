@@ -62,9 +62,7 @@ internal sealed class DualModeOutputDecoder(
         try
         {
             int charactersRead;
-            while ((charactersRead = await reader
-                       .ReadAsync(buffer.AsMemory(), cancellationToken)
-                       .ConfigureAwait(false)) > 0)
+            while ((charactersRead = await reader.ReadAsync(buffer.AsMemory(), cancellationToken)) > 0)
             {
                 Append(buffer.AsSpan(0, charactersRead));
                 _output.Flush();
